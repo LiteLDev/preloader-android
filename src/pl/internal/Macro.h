@@ -7,9 +7,9 @@
 #endif
 
 #ifdef PRELOADER_EXPORT
-#define PLAPI PRELOADER_MAYBE_UNUSED __declspec(dllexport)
+#define PLAPI [[maybe_unused]] __attribute__((visibility("default")))
 #else
-#define PLAPI PRELOADER_MAYBE_UNUSED __declspec(dllimport)
+#define PLAPI [[maybe_unused]]
 #endif
 
 #ifdef __cplusplus

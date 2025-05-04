@@ -1,23 +1,31 @@
-#include <cstring>
-#include <memory>
+#include "Hook.h"
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
+#ifndef RT_SUCCESS
+#define RT_SUCCESS 0
+#endif
+
 #include <mutex>
 #include <set>
+#include <type_traits>
 #include <unordered_map>
 
 #include <dlfcn.h>
+
 typedef enum {
-  SHADOWHOOK_MODE_SHARED = 0,
-  SHADOWHOOK_MODE_UNIQUE = 1
+  SHADOWHOOK_MODE_SHARED = 0, // a function can be hooked multiple times
+  SHADOWHOOK_MODE_UNIQUE = 1  // a function can only be hooked once, and hooking
+                              // again will report an error
 } shadowhook_mode_t;
 
 static int (*shadowhook_init)(shadowhook_mode_t mode, bool debuggable);
 static void *(*shadowhook_hook_func_addr)(void *func_addr, void *new_addr,
                                           void **orig_addr);
 static int (*shadowhook_unhook)(void *stub);
-
 namespace pl::hook {
-
-using FuncPtr = void *;
 
 struct HookElement {
   FuncPtr detour{};
@@ -71,8 +79,9 @@ std::unordered_map<FuncPtr, std::shared_ptr<HookData>> &getHooks() {
 static std::mutex hooksMutex{};
 
 int pl_hook(FuncPtr target, FuncPtr detour, FuncPtr *originalFunc,
-            int priority) {
+            Priority priority) {
   std::lock_guard lock(hooksMutex);
+
   static bool init = false;
 
   if (!init) {
@@ -91,7 +100,6 @@ int pl_hook(FuncPtr target, FuncPtr detour, FuncPtr *originalFunc,
       init = true;
     }
   }
-  
   auto it = getHooks().find(target);
   if (it != getHooks().end()) {
     auto hookData = it->second;
@@ -107,9 +115,9 @@ int pl_hook(FuncPtr target, FuncPtr detour, FuncPtr *originalFunc,
   hookData->target = target;
   hookData->origin = nullptr;
   hookData->start = detour;
+  hookData->stub = shadowhook_hook_func_addr(target, detour, &hookData->origin);
   hookData->hooks.insert(
       {detour, originalFunc, priority, hookData->incrementHookId()});
-  hookData->stub = shadowhook_hook_func_addr(target, detour, &hookData->origin);
   if (!hookData->stub) {
     return -1;
   }
