@@ -1,5 +1,4 @@
 #include "ModManager.h"
-#include "Logger.h"
 #include <dlfcn.h>
 #include <fstream>
 #include <nlohmann/json.hpp>

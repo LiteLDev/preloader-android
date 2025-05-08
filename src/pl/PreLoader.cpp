@@ -1,5 +1,5 @@
+#include "Logger.h"
 #include "internal/AndroidUtils.h"
-#include "internal/Logger.h"
 #include "internal/ModManager.h"
 #include <android/native_activity.h>
 #include <dlfcn.h>
