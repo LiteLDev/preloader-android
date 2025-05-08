@@ -77,6 +77,13 @@ static std::mutex hooksMutex{};
 
 int pl_hook(FuncPtr target, FuncPtr detour, FuncPtr *originalFunc,
             Priority priority) {
+
+  static bool initialized = false;
+  if (!initialized) {
+    GlossInit(true);
+    initialized = true;
+  }
+
   std::lock_guard lock(hooksMutex);
   auto it = getHooks().find(target);
   if (it != getHooks().end()) {
