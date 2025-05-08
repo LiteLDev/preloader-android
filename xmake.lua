@@ -12,6 +12,8 @@ target("preloader")
     add_headerfiles("src/(**.h)")
     add_files("src/**.cpp")
     add_includedirs("./src")
+    add_linkdirs("lib")
+    add_links("GlossHook")
     add_defines("PRELOADER_EXPORT", "UNICODE")
     add_packages("nlohmann_json","fmt")
 
