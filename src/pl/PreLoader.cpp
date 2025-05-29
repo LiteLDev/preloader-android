@@ -1,4 +1,3 @@
-#include "Logger.h"
 #include "internal/AndroidUtils.h"
 #include "internal/ModManager.h"
 #include <android/native_activity.h>
