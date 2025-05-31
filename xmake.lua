@@ -12,8 +12,13 @@ target("preloader")
     add_headerfiles("src/(**.h)")
     add_files("src/**.cpp")
     add_includedirs("./src")
-    add_linkdirs("lib")
+
+    if is_arch("armeabi-v7a") then
+        add_linkdirs("lib/ARM")
+    elseif is_arch("arm64-v8a") then
+        add_linkdirs("lib/ARM64")
+    end
+    
     add_links("GlossHook")
     add_defines("PRELOADER_EXPORT", "UNICODE")
-    add_packages("nlohmann_json","fmt")
-
+    add_packages("nlohmann_json", "fmt")
