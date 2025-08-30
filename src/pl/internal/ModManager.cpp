@@ -23,9 +23,17 @@ bool ModManager::IsModEnabled(const std::filesystem::path &json_path,
   } catch (...) {
     return false;
   }
-  auto it = mods_config.find(mod_filename);
-  if (it != mods_config.end())
-    return it.value().get<bool>();
+  if (mods_config.is_object()) {
+    auto it = mods_config.find(mod_filename);
+    if (it != mods_config.end())
+      return it.value().get<bool>();
+  } else if (mods_config.is_array()) {
+    for (auto &item : mods_config) {
+      if (item.contains("name") && item["name"] == mod_filename) {
+        return item.value("enabled", false);
+      }
+    }
+  }
   return false;
 }
 
