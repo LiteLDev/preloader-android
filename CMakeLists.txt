@@ -63,3 +63,12 @@ target_link_libraries(preloader
         nlohmann_json::nlohmann_json
         fmt::fmt
 )
+
+install(TARGETS preloader
+        ARCHIVE DESTINATION lib
+        LIBRARY DESTINATION lib
+        RUNTIME DESTINATION bin)
+
+install(DIRECTORY src/
+        DESTINATION include
+        FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp")
