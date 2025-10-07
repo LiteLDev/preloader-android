@@ -2,6 +2,9 @@
 #include <cstdint>
 #include <string>
 
-namespace memory {
-uintptr_t resolveSignature(const std::string &signature);
-}
+namespace signature {
+
+uintptr_t resolveSignature(const std::string &signature,
+                           const std::string &moduleName = "libminecraftpe.so");
+
+} // namespace signature

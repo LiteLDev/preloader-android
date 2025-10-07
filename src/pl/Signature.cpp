@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace memory {
+namespace signature {
 
 struct SigPattern {
   std::vector<uint8_t> pattern;
@@ -58,46 +58,66 @@ static const uint8_t *maskScan(const uint8_t *start, const uint8_t *end,
   return nullptr;
 }
 
+// --- Cache structures ---
+struct ModuleInfo {
+  uintptr_t base = 0;
+  size_t size = 0;
+  GHandle handle = 0;
+  bool initialized = false;
+};
+
+static std::unordered_map<std::string, ModuleInfo> moduleCache;
 static std::unordered_map<std::string, uintptr_t> sigCache;
 static std::unordered_map<std::string,
                           std::pair<SigPattern, std::vector<size_t>>>
     patternCache;
 static std::mutex cacheMutex;
 
-static bool initialized = false;
-static uintptr_t moduleBase = 0;
-static size_t moduleSize = 0;
-static GHandle handle = 0;
+// --- Core function ---
+uintptr_t resolveSignature(
+    const std::string &signature,
+    const std::string &moduleName /* default = libminecraftpe.so */) {
+  const std::string combinedKey = moduleName + "::" + signature;
 
-uintptr_t resolveSignature(const std::string &signature) {
-  {
+  { // check cache
     std::lock_guard<std::mutex> lock(cacheMutex);
-    auto it = sigCache.find(signature);
-    if (it != sigCache.end())
+    if (auto it = sigCache.find(combinedKey); it != sigCache.end())
       return it->second;
   }
 
-  if (!initialized) {
-    GlossInit(true);
-    handle = GlossOpen("libminecraftpe.so");
-    moduleBase = GlossGetLibBiasEx(handle);
-    moduleSize = GlossGetLibFileSize(handle);
-    initialized = true;
+  ModuleInfo mod;
+
+  { // load module info
+    std::lock_guard<std::mutex> lock(cacheMutex);
+    auto it = moduleCache.find(moduleName);
+    if (it != moduleCache.end()) {
+      mod = it->second;
+    } else {
+      GlossInit(true);
+      GHandle handle = GlossOpen(moduleName.c_str());
+      if (!handle)
+        return 0;
+      mod.handle = handle;
+      mod.base = GlossGetLibBiasEx(handle);
+      mod.size = GlossGetLibFileSize(handle);
+      mod.initialized = true;
+      moduleCache[moduleName] = mod;
+    }
   }
 
-  uintptr_t addr = GlossSymbol(handle, signature.c_str(), nullptr);
+  uintptr_t addr = GlossSymbol(mod.handle, signature.c_str(), nullptr);
   if (addr) {
     std::lock_guard<std::mutex> lock(cacheMutex);
-    sigCache[signature] = addr;
+    sigCache[combinedKey] = addr;
     return addr;
   }
 
+  // --- Parse pattern ---
   SigPattern sigpat;
   std::vector<size_t> bmhTable;
   {
     std::lock_guard<std::mutex> lock(cacheMutex);
-    auto it = patternCache.find(signature);
-    if (it != patternCache.end()) {
+    if (auto it = patternCache.find(signature); it != patternCache.end()) {
       sigpat = it->second.first;
       bmhTable = it->second.second;
     } else {
@@ -115,7 +135,7 @@ uintptr_t resolveSignature(const std::string &signature) {
             break;
           char buf[3] = {signature[i], signature[i + 1], 0};
           unsigned long value = strtoul(buf, nullptr, 16);
-          sigpat.pattern.push_back(static_cast<uint8_t>(value));
+          sigpat.pattern.push_back((uint8_t)value);
           sigpat.mask.push_back(true);
           i += 2;
         }
@@ -124,27 +144,25 @@ uintptr_t resolveSignature(const std::string &signature) {
       patternCache[signature] = {sigpat, bmhTable};
     }
   }
+
   if (sigpat.pattern.empty())
-    return moduleBase;
+    return mod.base;
 
-  const uint8_t *start = reinterpret_cast<const uint8_t *>(moduleBase);
-  const uint8_t *end = start + moduleSize - sigpat.pattern.size();
+  const uint8_t *start = reinterpret_cast<const uint8_t *>(mod.base);
+  const uint8_t *end = start + mod.size - sigpat.pattern.size();
 
-  uintptr_t result = 0;
-  const uint8_t *found_ptr = nullptr;
-  found_ptr = bmSearch(start, end, sigpat, bmhTable);
+  const uint8_t *found_ptr = bmSearch(start, end, sigpat, bmhTable);
   if (!found_ptr)
     found_ptr = maskScan(start, end, sigpat);
-  if (found_ptr)
-    result = reinterpret_cast<uintptr_t>(found_ptr);
-  else
-    result = 0;
+
+  uintptr_t result = found_ptr ? reinterpret_cast<uintptr_t>(found_ptr) : 0;
 
   {
     std::lock_guard<std::mutex> lock(cacheMutex);
-    sigCache[signature] = result;
+    sigCache[combinedKey] = result;
   }
+
   return result;
 }
 
-} // namespace memory
+} // namespace signature
