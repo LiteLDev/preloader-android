@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace signature {
+namespace pl::signature {
 
 struct SigPattern {
   std::vector<uint8_t> pattern;

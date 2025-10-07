@@ -1,5 +1,3 @@
-#pragma once
-
 #include <android/log.h>
 #include <fmt/core.h>
 #include <string>

@@ -2,7 +2,7 @@
 #include <cstdint>
 #include <string>
 
-namespace signature {
+namespace pl::signature {
 
 uintptr_t resolveSignature(const std::string &signature,
                            const std::string &moduleName = "libminecraftpe.so");
