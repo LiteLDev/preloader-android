@@ -6,7 +6,7 @@ file(GLOB_RECURSE PRELOADER_SRC
         "src/**/*.cpp"
 )
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -21,7 +21,6 @@ target_compile_definitions(preloader
         PRIVATE PRELOADER_EXPORT UNICODE
 )
 
-
 include(FetchContent)
 
 FetchContent_Declare(
@@ -30,13 +29,6 @@ FetchContent_Declare(
         GIT_TAG v3.11.3
 )
 FetchContent_MakeAvailable(nlohmann_json)
-
-FetchContent_Declare(
-        fmt
-        GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-        GIT_TAG 10.2.1
-)
-FetchContent_MakeAvailable(fmt)
 
 find_library(log-lib log)
 find_library(android-lib android)
@@ -61,7 +53,6 @@ target_link_libraries(preloader
         ${egl-lib}
         ${gles-lib}
         nlohmann_json::nlohmann_json
-        fmt::fmt
 )
 
 install(TARGETS preloader

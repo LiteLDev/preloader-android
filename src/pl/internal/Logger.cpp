@@ -1,5 +1,5 @@
 #include <android/log.h>
-#include <fmt/core.h>
+#include <format>
 #include <string>
 #include <string_view>
 
@@ -38,8 +38,8 @@ private:
   template <typename... Args>
   void log(int android_level, std::string_view fmt_str, Args &&...args) const {
     auto msg =
-        fmt::format("[{}] {}", loggerName,
-                    fmt::vformat(fmt_str, fmt::make_format_args(args...)));
+        std::format("[{}] {}", loggerName,
+                    std::vformat(fmt_str, std::make_format_args(args...)));
     __android_log_print(android_level, LOG_TAG, "%s", msg.c_str());
   }
 };
