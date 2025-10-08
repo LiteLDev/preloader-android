@@ -1,6 +1,8 @@
 #pragma once
 
 #include <string>
+namespace pl {
+namespace log {
 
 class Logger {
 public:
@@ -15,3 +17,5 @@ private:
   std::string loggerName;
   void log(int level, const char *fmt, va_list args);
 };
+} // namespace log
+} // namespace pl
