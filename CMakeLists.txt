@@ -8,7 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 file(GLOB_RECURSE PRELOADER_SRC "src/**/*.cpp")
 add_library(preloader SHARED ${PRELOADER_SRC})
 
-target_include_directories(preloader PRIVATE src)
+target_include_directories(preloader PUBLIC src)
 target_compile_definitions(preloader PRIVATE PRELOADER_EXPORT UNICODE)
 
 include(FetchContent)
