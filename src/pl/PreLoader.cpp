@@ -8,11 +8,9 @@
 #include <android/log.h>
 #include "internal/AndroidUtils.h"
 #include "internal/ModManager.h"
+#include "Logger.h"
 
-#define LOG_TAG "NativeLoader"
-#define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
-
+pl::log::Logger logger("NativeLoader");
 
 JavaVM *g_vm = nullptr;
 
@@ -31,7 +29,7 @@ JNIEXPORT void ANativeActivity_onCreate(ANativeActivity* activity, void* savedSt
     if (onCreate) {
         onCreate(activity, savedState, savedStateSize);
     } else {
-        LOGE("ANativeActivity_onCreate function not loaded");
+        logger.error("ANativeActivity_onCreate function not loaded");
     }
 }
 
@@ -45,7 +43,7 @@ JNIEXPORT void android_main(struct android_app* state) {
     if (androidMain) {
         androidMain(state);
     } else {
-        LOGE("android_main function not loaded");
+        logger.error("android_main function not loaded");
     }
 }
 
@@ -72,7 +70,7 @@ Java_org_levimc_launcher_core_minecraft_MinecraftActivity_nativeOnLauncherLoaded
 
     void* handle = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
     if (!handle) {
-        LOGE("Failed to load library: %s", dlerror());
+        logger.error("Failed to load library: %s", dlerror());
         env->ReleaseStringUTFChars(libPath, path);
         return;
     }
@@ -82,15 +80,15 @@ Java_org_levimc_launcher_core_minecraft_MinecraftActivity_nativeOnLauncherLoaded
     androidMain = reinterpret_cast<decltype(androidMain)>(dlsym(handle, "android_main"));
 
     if (!onCreate || !androidMain) {
-        LOGE("Failed to resolve required symbols");
+        logger.error("Failed to resolve required symbols");
     } else {
-        LOGD("Successfully loaded Minecraft native functions");
+        logger.debug("Successfully loaded Minecraft native functions");
     }
     env->ReleaseStringUTFChars(libPath, path);
     if (!g_modsInitialized && !g_modsDir.empty()) {
         ModManager::LoadAndInitializeEnabledMods(g_modsDir, g_cacheDir, g_vm);
         g_modsInitialized = true;
-        LOGD("Mods initialized successfully");
+        logger.debug("Mods initialized successfully");
     }
 }
 
