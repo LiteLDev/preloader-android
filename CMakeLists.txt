@@ -21,7 +21,7 @@ FetchContent_MakeAvailable(nlohmann_json)
 
 FetchContent_Declare(
         Dobby
-        GIT_REPOSITORY https://github.com/dzyong/Dobby.git
+        GIT_REPOSITORY https://github.com/dreamguxiang/Dobby.git
         GIT_TAG master
 )
 FetchContent_MakeAvailable(Dobby)
