@@ -1,14 +1,9 @@
+#include "Gloss.h"
 #include "Hook.h"
-#include <cstdint>
-#include <string>
-#include <vector>
 #include <mutex>
-#include <set>
-#include <type_traits>
-#include <unordered_map>
 #include <memory>
-
-#include <dobby.h>
+#include <unordered_map>
+#include <set>
 
 namespace pl::hook {
 
@@ -18,10 +13,10 @@ namespace pl::hook {
         int priority{};
         int id{};
 
-        bool operator<(const HookElement &other) const {
-            if (priority != other.priority)
-                return priority < other.priority;
-            return id < other.id;
+        bool operator<(const HookElement &o) const noexcept {
+            if (priority != o.priority)
+                return priority < o.priority;
+            return id < o.id;
         }
     };
 
@@ -29,105 +24,105 @@ namespace pl::hook {
         FuncPtr target{};
         FuncPtr origin{};
         FuncPtr start{};
-        int hookId{};
-        std::set<HookElement> hooks{};
+        GHook glossHandle{};
+        int counter{};
+        std::set<HookElement> chain;
 
-        void updateCallList() {
-            FuncPtr *last = nullptr;
-            for (auto &item : this->hooks) {
-                if (last == nullptr) {
-                    this->start = item.detour;
-                    last = item.originalFunc;
-                    *last = this->origin;
-                } else {
-                    *last = item.detour;
-                    last = item.originalFunc;
-                }
-            }
-            if (last == nullptr) {
-                this->start = this->origin;
-            } else {
-                *last = this->origin;
-            }
+        ~HookData() {
+            if (glossHandle)
+                GlossHookDelete(glossHandle);
         }
 
-        int incrementHookId() { return ++hookId; }
-    };
+        int nextId() noexcept { return ++counter; }
 
-    std::unordered_map<FuncPtr, std::shared_ptr<HookData>> &getHooks() {
-        static std::unordered_map<FuncPtr, std::shared_ptr<HookData>> hooks;
-        return hooks;
-    }
-
-    static std::mutex hooksMutex{};
-
-    int pl_hook(FuncPtr target, FuncPtr detour, FuncPtr *originalFunc,
-                Priority priority) {
-
-        std::lock_guard lock(hooksMutex);
-        auto it = getHooks().find(target);
-        if (it != getHooks().end()) {
-            auto hookData = it->second;
-            hookData->hooks.insert(
-                    {detour, originalFunc, priority, hookData->incrementHookId()});
-            hookData->updateCallList();
-
-            DobbyDestroy(target);
-            if (DobbyHook((void *)target, (void *)hookData->start,
-                          (void **)&hookData->origin) != 0) {
-                return -1;
+        void rebuildChain() {
+            FuncPtr *prev = nullptr;
+            for (auto &e : chain) {
+                if (!prev) {
+                    start = e.detour;
+                    prev = e.originalFunc;
+                    *prev = origin;
+                } else {
+                    *prev = e.detour;
+                    prev = e.originalFunc;
+                }
             }
 
+            if (prev)
+                *prev = origin;
+            else
+                start = origin;
+
+            if (glossHandle)
+                GlossHookReplaceNewFunc(glossHandle, start);
+        }
+    };
+
+    static std::unordered_map<FuncPtr, std::shared_ptr<HookData>>& hooks() {
+        static std::unordered_map<FuncPtr, std::shared_ptr<HookData>> m;
+        return m;
+    }
+    static std::mutex mtx;
+
+    int pl_hook(FuncPtr target, FuncPtr detour, FuncPtr *original, Priority priority) {
+        static bool inited = false;
+        if (!inited) {
+            GlossInit(true);
+            inited = true;
+        }
+
+        std::lock_guard<std::mutex> lock(mtx);
+        auto &map = hooks();
+        auto it = map.find(target);
+
+        if (it != map.end()) {
+            auto h = it->second;
+            h->chain.insert({detour, original, priority, h->nextId()});
+            h->rebuildChain();
             return 0;
         }
 
-        auto hookData = std::make_shared<HookData>();
-        hookData->target = target;
-        hookData->origin = target;
-        hookData->start = detour;
-        hookData->hooks.insert(
-                {detour, originalFunc, priority, hookData->incrementHookId()});
+        auto h = std::make_shared<HookData>();
+        h->target = target;
+        h->origin = target;
 
-        if (DobbyHook((void *)target, (void *)hookData->start,
-                      (void **)&hookData->origin) != 0) {
+        h->glossHandle = GlossHook(reinterpret_cast<void*>(target),
+                                   reinterpret_cast<void*>(detour),
+                                   reinterpret_cast<void**>(&h->origin));
+        if (!h->glossHandle)
             return -1;
-        }
 
-        hookData->updateCallList();
-        getHooks().emplace(target, hookData);
+        h->chain.insert({detour, original, priority, h->nextId()});
+        h->rebuildChain();
+        map[target] = h;
         return 0;
     }
 
     bool pl_unhook(FuncPtr target, FuncPtr detour) {
-        std::lock_guard lock(hooksMutex);
+        std::lock_guard<std::mutex> lock(mtx);
+        auto &map = hooks();
+        auto it = map.find(target);
+        if (it == map.end()) return false;
 
-        if (target == nullptr) {
-            return false;
-        }
-
-        auto hookDataIter = getHooks().find(target);
-        if (hookDataIter == getHooks().end()) {
-            return false;
-        }
-
-        auto &hookData = hookDataIter->second;
-        for (auto it = hookData->hooks.begin(); it != hookData->hooks.end(); ++it) {
-            if (it->detour == detour) {
-                hookData->hooks.erase(it);
-                hookData->updateCallList();
-
-                DobbyDestroy(target);
-                if (!hookData->hooks.empty()) {
-                    DobbyHook((void *)target, (void *)hookData->start,
-                              (void **)&hookData->origin);
-                } else {
-                    getHooks().erase(target);
-                }
-
-                return true;
+        auto &h = it->second;
+        bool removed = false;
+        for (auto eit = h->chain.begin(); eit != h->chain.end(); ++eit) {
+            if (eit->detour == detour) {
+                h->chain.erase(eit);
+                removed = true;
+                break;
             }
         }
-        return false;
+
+        if (!removed) return false;
+
+        if (h->chain.empty()) {
+            GlossHookDelete(h->glossHandle);
+            map.erase(it);
+        } else {
+            h->rebuildChain();
+        }
+        return true;
     }
 
 } // namespace pl::hook
