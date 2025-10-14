@@ -130,9 +130,10 @@ namespace pl::signature {
         return pat;
     }
 
-
-    uintptr_t resolveSignature(const std::string &signature, const std::string &moduleName) {
-        const std::string combinedKey = moduleName + "::" + signature;
+    uintptr_t pl_resolve_signature(const char* signature, const char* moduleName) {
+        std::string combinedKey;
+        combinedKey.reserve(strlen(moduleName) + strlen(signature) + 2);
+        combinedKey.append(moduleName).append("::").append(signature);
 
         {
             std::shared_lock lk(cacheMutex);
@@ -152,7 +153,7 @@ namespace pl::signature {
         }
 
         if (mod.handle) {
-            if (void *sym = dlsym(mod.handle, signature.c_str())) {
+            if (void *sym = dlsym(mod.handle, signature)) {
                 uintptr_t addr = reinterpret_cast<uintptr_t>(sym);
                 std::unique_lock lk(cacheMutex);
                 sigCache[combinedKey] = addr;
@@ -193,4 +194,9 @@ namespace pl::signature {
         return result;
     }
 
+    uintptr_t resolveSignature(const std::string &signature, const std::string &moduleName) {
+        return pl_resolve_signature(signature.c_str(), moduleName.c_str());
+    }
 } // namespace pl::signature
+
+

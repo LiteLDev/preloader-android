@@ -70,7 +70,6 @@ namespace pl::hook {
             GlossInit(true);
             inited = true;
         }
-
         std::lock_guard<std::mutex> lock(mtx);
         auto &map = hooks();
         auto it = map.find(target);
@@ -117,7 +116,6 @@ namespace pl::hook {
         if (!removed) return false;
 
         if (h->chain.empty()) {
-            GlossHookDelete(h->glossHandle);
             map.erase(it);
         } else {
             h->rebuildChain();
