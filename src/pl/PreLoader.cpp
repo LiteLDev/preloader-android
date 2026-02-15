@@ -9,8 +9,12 @@
 #include "internal/AndroidUtils.h"
 #include "internal/ModManager.h"
 #include "Logger.h"
+#include "PreloaderInput.h"
 
 pl::log::Logger logger("NativeLoader");
+
+static std::vector<PreloaderInput_OnTouch_Fn> g_touchCallbacks;
+static std::mutex g_callbackMutex;
 
 JavaVM *g_vm = nullptr;
 
@@ -101,6 +105,35 @@ Java_org_levimc_launcher_core_minecraft_MinecraftLauncher_nativeOnLauncherLoaded
 
 
     Java_org_levimc_launcher_core_minecraft_MinecraftActivity_nativeOnLauncherLoaded(env, thiz, libPath);
+}
+
+
+
+JNIEXPORT jboolean JNICALL Java_org_levimc_launcher_preloader_PreloaderInput_nativeOnTouch(
+        JNIEnv* env, jclass clazz, jint action, jint pointerId, jfloat x, jfloat y) {
+
+std::lock_guard<std::mutex> lock(g_callbackMutex);
+bool consumed = false;
+for (auto callback : g_touchCallbacks) {
+if (callback) {
+consumed |= callback(action, pointerId, x, y);
+}
+}
+return consumed ? JNI_TRUE : JNI_FALSE;
+}
+
+static void RegisterTouchCallback(PreloaderInput_OnTouch_Fn callback) {
+    std::lock_guard<std::mutex> lock(g_callbackMutex);
+    g_touchCallbacks.push_back(callback);
+    logger.debug("Registered touch callback");
+}
+
+static PreloaderInput_Interface g_inputInterface = {
+        .RegisterTouchCallback = RegisterTouchCallback
+};
+
+__attribute__((visibility("default"))) PreloaderInput_Interface* GetPreloaderInput() {
+    return &g_inputInterface;
 }
 
 }
