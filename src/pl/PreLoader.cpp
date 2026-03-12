@@ -7,11 +7,12 @@
 #include <dlfcn.h>
 #include <android/log.h>
 #include "internal/AndroidUtils.h"
-#include "internal/ModManager.h"
 #include "Logger.h"
 #include "PreloaderInput.h"
+#include "pl/internal/Macro.h"
 
-pl::log::Logger logger("NativeLoader");
+pl::log::Logger logger("Preloader");
+using LoadFunc = void (*)(JavaVM *);
 
 static std::vector<PreloaderInput_OnTouch_Fn> g_touchCallbacks;
 static std::mutex g_callbackMutex;
@@ -28,6 +29,13 @@ static void (*androidMain)(struct android_app*) = nullptr;
 
 extern "C" {
 
+PLCAPI std::string getModsDir() {
+    return g_modsDir;
+}
+
+PLCAPI std::string getCacheDir() {
+    return g_cacheDir;
+}
 
 JNIEXPORT void ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_t savedStateSize) {
     if (onCreate) {
@@ -65,9 +73,9 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {
 }
 
 JNIEXPORT void JNICALL
-Java_org_levimc_launcher_core_minecraft_MinecraftActivity_nativeOnLauncherLoaded(
+Java_org_levimc_launcher_core_mods_ModManager_nativeOnLaunched(
         JNIEnv* env,
-        jobject thiz,
+        jclass clazz,
         jstring libPath
 ) {
     const char* path = env->GetStringUTFChars(libPath, nullptr);
@@ -89,37 +97,34 @@ Java_org_levimc_launcher_core_minecraft_MinecraftActivity_nativeOnLauncherLoaded
         logger.debug("Successfully loaded Minecraft native functions");
     }
     env->ReleaseStringUTFChars(libPath, path);
-    if (!g_modsInitialized && !g_modsDir.empty()) {
-        ModManager::LoadAndInitializeEnabledMods(g_modsDir, g_cacheDir, g_vm);
-        g_modsInitialized = true;
-        logger.debug("Mods initialized successfully");
+}
+
+JNIEXPORT jboolean JNICALL Java_org_levimc_launcher_core_mods_ModManager_nativeLoadMod(JNIEnv* env, jclass clazz, jstring libPath) {
+    const char* path = env->GetStringUTFChars(libPath, nullptr);
+    if (void *handle = dlopen(path, RTLD_NOW)) {
+      LoadFunc func = (LoadFunc)dlsym(handle, "LeviMod_Load");
+      if (func) {
+        func(vm);
+      }
+    } else {
+        logger.error("failed to load mod: %s", path);
+        return JNI_FALSE;
     }
+    env->ReleaseStringUTFChars(libPath, path);
+    logger.info("successful loading mod: %s", path);
+    return JNI_TRUE;
 }
 
-JNIEXPORT void JNICALL
-Java_org_levimc_launcher_core_minecraft_MinecraftLauncher_nativeOnLauncherLoaded(
-        JNIEnv* env,
-        jobject thiz,
-        jstring libPath
-) {
+JNIEXPORT jboolean JNICALL Java_org_levimc_launcher_preloader_PreloaderInput_nativeOnTouch(JNIEnv* env, jclass clazz, jint action, jint pointerId, jfloat x, jfloat y) {
 
-
-    Java_org_levimc_launcher_core_minecraft_MinecraftActivity_nativeOnLauncherLoaded(env, thiz, libPath);
-}
-
-
-
-JNIEXPORT jboolean JNICALL Java_org_levimc_launcher_preloader_PreloaderInput_nativeOnTouch(
-        JNIEnv* env, jclass clazz, jint action, jint pointerId, jfloat x, jfloat y) {
-
-std::lock_guard<std::mutex> lock(g_callbackMutex);
-bool consumed = false;
-for (auto callback : g_touchCallbacks) {
-if (callback) {
-consumed |= callback(action, pointerId, x, y);
-}
-}
-return consumed ? JNI_TRUE : JNI_FALSE;
+    std::lock_guard<std::mutex> lock(g_callbackMutex);
+    bool consumed = false;
+    for (auto callback : g_touchCallbacks) {
+        if (callback) {
+            consumed |= callback(action, pointerId, x, y);
+        }
+    }
+    return consumed ? JNI_TRUE : JNI_FALSE;
 }
 
 static void RegisterTouchCallback(PreloaderInput_OnTouch_Fn callback) {
@@ -132,7 +137,7 @@ static PreloaderInput_Interface g_inputInterface = {
         .RegisterTouchCallback = RegisterTouchCallback
 };
 
-__attribute__((visibility("default"))) PreloaderInput_Interface* GetPreloaderInput() {
+PLCAPI PreloaderInput_Interface* GetPreloaderInput() {
     return &g_inputInterface;
 }
 
