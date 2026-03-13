@@ -29,12 +29,12 @@ static void (*androidMain)(struct android_app*) = nullptr;
 
 extern "C" {
 
-PLCAPI std::string getModsDir() {
-    return g_modsDir;
+PLCAPI const char* getModsDir() {
+    return g_modsDir.c_str();
 }
 
-PLCAPI std::string getCacheDir() {
-    return g_cacheDir;
+PLCAPI const char* getCacheDir() {
+    return g_cacheDir.c_str();
 }
 
 JNIEXPORT void ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_t savedStateSize) {
@@ -104,7 +104,7 @@ JNIEXPORT jboolean JNICALL Java_org_levimc_launcher_core_mods_ModManager_nativeL
     if (void *handle = dlopen(path, RTLD_NOW)) {
       LoadFunc func = (LoadFunc)dlsym(handle, "LeviMod_Load");
       if (func) {
-        func(vm);
+        func(g_vm);
       }
     } else {
         logger.error("failed to load mod: %s", path);
