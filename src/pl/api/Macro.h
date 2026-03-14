@@ -1,4 +1,7 @@
 #pragma once
+#pragma warning(error : 4834)
+
+#define VA_EXPAND(...) __VA_ARGS__
 
 #ifdef __cplusplus
 #define PRELOADER_MAYBE_UNUSED [[maybe_unused]]

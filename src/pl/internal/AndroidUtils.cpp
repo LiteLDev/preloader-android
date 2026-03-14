@@ -1,4 +1,4 @@
-#include "AndroidUtils.h"
+#include "pl/internal/AndroidUtils.h"
 
 jobject AndroidUtils::GetGlobalContext(JNIEnv *env) {
   jclass activity_thread = env->FindClass("android/app/ActivityThread");

@@ -1,4 +1,4 @@
-#include "Signature.h"
+#include "pl/Signature.h"
 #include <cstdint>
 #include <dlfcn.h>
 #include <fstream>
@@ -8,7 +8,6 @@
 #include <vector>
 #include <sstream>
 #include <sys/stat.h>
-#include "Logger.h"
 
 namespace pl::signature {
 
@@ -193,9 +192,16 @@ namespace pl::signature {
 
         return result;
     }
-
+    
     uintptr_t resolveSignature(const std::string &signature, const std::string &moduleName) {
         return pl_resolve_signature(signature.c_str(), moduleName.c_str());
+    }
+    
+    static void* resolveMinecraftSignature(const char* sig, const char* name) {
+        uintptr_t addr = pl_resolve_signature(sig, "libminecraftpe.so");
+        if (!addr) { logger.error("signature not found: %s", name); return nullptr; }
+        logger.info("signature found %s @ 0x%lx", name, (ulong)addr);
+        return reinterpret_cast<void*>(addr);
     }
 } // namespace pl::signature
 
