@@ -2,40 +2,31 @@
 // Created by mrjar on 10/5/2025.
 //
 
-#include <jni.h>
-#include <android/native_activity.h>
-#include <dlfcn.h>
-#include <android/log.h>
-#include "internal/AndroidUtils.h"
-#include "Logger.h"
-#include "PreloaderInput.h"
-#include "pl/internal/Macro.h"
-
-pl::log::Logger logger("Preloader");
-using LoadFunc = void (*)(JavaVM *);
-
-static std::vector<PreloaderInput_OnTouch_Fn> g_touchCallbacks;
-static std::mutex g_callbackMutex;
+#include "Preloader.h"
 
 JavaVM *g_vm = nullptr;
 
 static std::string g_modsDir;
 static std::string g_cacheDir;
-static bool g_modsInitialized = false;
+static std::vector<PreloaderInput_OnTouch_Fn> g_touchCallbacks;
+static std::mutex g_callbackMutex;
+static bool isLoaded = false;
 
 static void (*onCreate)(ANativeActivity*, void*, size_t) = nullptr;
 static void (*onFinish)(ANativeActivity*) = nullptr;
 static void (*androidMain)(struct android_app*) = nullptr;
 
+std::string getModsDir() {
+    if(isLoaded) return g_modsDir;
+    return "";
+}
+
+std::string getCacheDir() {
+    if(isLoaded) return g_cacheDir;
+    return "";
+}
+
 extern "C" {
-
-PLCAPI const char* getModsDir() {
-    return g_modsDir.c_str();
-}
-
-PLCAPI const char* getCacheDir() {
-    return g_cacheDir.c_str();
-}
 
 JNIEXPORT void ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_t savedStateSize) {
     if (onCreate) {
@@ -68,6 +59,8 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {
     auto paths = AndroidUtils::FetchContextPaths(env);
     g_modsDir = paths.modsDir;
     g_cacheDir = paths.cacheDir;
+    
+    isLoaded = true;
 
     return JNI_VERSION_1_4;
 }
@@ -99,12 +92,13 @@ Java_org_levimc_launcher_core_mods_ModManager_nativeOnLaunched(
     env->ReleaseStringUTFChars(libPath, path);
 }
 
-JNIEXPORT jboolean JNICALL Java_org_levimc_launcher_core_mods_ModManager_nativeLoadMod(JNIEnv* env, jclass clazz, jstring libPath) {
+JNIEXPORT jboolean JNICALL Java_org_levimc_launcher_core_mods_ModManager_nativeLoadMod(JNIEnv* env, jclass clazz, jstring libPath, jobject modObj) {
+    Mod mod(env, modObj);
     const char* path = env->GetStringUTFChars(libPath, nullptr);
     if (void *handle = dlopen(path, RTLD_NOW)) {
       LoadFunc func = (LoadFunc)dlsym(handle, "LeviMod_Load");
       if (func) {
-        func(g_vm);
+        func(g_vm, mod);
       }
     } else {
         logger.error("failed to load mod: %s", path);
@@ -137,7 +131,7 @@ static PreloaderInput_Interface g_inputInterface = {
         .RegisterTouchCallback = RegisterTouchCallback
 };
 
-PLCAPI PreloaderInput_Interface* GetPreloaderInput() {
+PLAPI PreloaderInput_Interface* GetPreloaderInput() {
     return &g_inputInterface;
 }
 

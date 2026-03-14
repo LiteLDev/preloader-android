@@ -1,6 +1,6 @@
 #pragma once
 
-#include "pl/internal/Macro.h"
+#include "pl/api/Macro.h"
 
 #ifdef __cplusplus
 namespace pl::hook {
@@ -20,6 +20,8 @@ PLCAPI int pl_hook(FuncPtr target, FuncPtr detour, FuncPtr *originalFunc,
                    Priority priority);
 
 PLCAPI bool pl_unhook(FuncPtr target, FuncPtr detour);
+
+PLCAPI bool pl_vhook(const char* cls, int slot, FuncPtr* outOrig, FuncPtr hookFn);
 
 #ifdef __cplusplus
 } // namespace pl::hook

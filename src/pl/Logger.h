@@ -42,3 +42,5 @@ namespace pl::log {
     };
 
 } // namespace pl::log
+
+inline pl::log::Logger logger("Preloader");
