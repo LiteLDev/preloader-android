@@ -1,3 +1,5 @@
+#pragma once
+
 #include <android/log.h>
 #include <format>
 #include <string>

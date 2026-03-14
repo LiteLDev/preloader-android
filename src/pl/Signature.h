@@ -8,7 +8,7 @@
 namespace pl::signature {
 #endif
     PLCAPI uintptr_t pl_resolve_signature(const char* signature, const char* moduleName);
-    PLCAPI void* resolveMinecraftSignature(const char* sig, const char* name)
+    PLCAPI void* resolveMinecraftSignature(const char* sig, const char* name);
 #ifdef __cplusplus
 } // namespace pl::hook
 #endif

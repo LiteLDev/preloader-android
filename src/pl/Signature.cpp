@@ -201,7 +201,7 @@ namespace pl::signature {
         return pl_resolve_signature(signature.c_str(), moduleName.c_str());
     }
     
-    static void* resolveMinecraftSignature(const char* sig, const char* name) {
+    void* resolveMinecraftSignature(const char* sig, const char* name) {
         uintptr_t addr = pl_resolve_signature(sig, "libminecraftpe.so");
         if (!addr) { logger.error("signature not found: %s", name); return nullptr; }
         logger.info("signature found %s @ 0x%lx", name, (ulong)addr);
