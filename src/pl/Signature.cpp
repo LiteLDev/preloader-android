@@ -203,8 +203,8 @@ namespace pl::signature {
     
     void* resolveMinecraftSignature(const char* sig, const char* name) {
         uintptr_t addr = pl_resolve_signature(sig, "libminecraftpe.so");
-        if (!addr) { logger.error("signature not found: %s", name); return nullptr; }
-        logger.info("signature found %s @ 0x%lx", name, (ulong)addr);
+        if (!addr) { preloader_logger.error("signature not found: %s", name); return nullptr; }
+        preloader_logger.info("signature found %s @ 0x%lx", name, (ulong)addr);
         return reinterpret_cast<void*>(addr);
     }
 } // namespace pl::signature

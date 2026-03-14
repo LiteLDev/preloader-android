@@ -1,7 +1,6 @@
 #pragma once
 #include <string>
 #include "pl/api/Macro.h"
-#include "pl/Logger.h"
 #include "pl/api/Types.h"
 
 #ifdef __cplusplus

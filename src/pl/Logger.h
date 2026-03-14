@@ -45,4 +45,4 @@ namespace pl::log {
 
 } // namespace pl::log
 
-inline pl::log::Logger logger("Preloader");
+inline pl::log::Logger preloader_logger("Preloader");

@@ -32,7 +32,7 @@ JNIEXPORT void ANativeActivity_onCreate(ANativeActivity* activity, void* savedSt
     if (onCreate) {
         onCreate(activity, savedState, savedStateSize);
     } else {
-        logger.error("ANativeActivity_onCreate function not loaded");
+        preloader_logger.error("ANativeActivity_onCreate function not loaded");
     }
 }
 
@@ -46,7 +46,7 @@ JNIEXPORT void android_main(struct android_app* state) {
     if (androidMain) {
         androidMain(state);
     } else {
-        logger.error("android_main function not loaded");
+        preloader_logger.error("android_main function not loaded");
     }
 }
 
@@ -75,7 +75,7 @@ Java_org_levimc_launcher_core_mods_ModManager_nativeOnLaunched(
 
     void* handle = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
     if (!handle) {
-        logger.error("Failed to load library: %s", dlerror());
+        preloader_logger.error("Failed to load library: %s", dlerror());
         env->ReleaseStringUTFChars(libPath, path);
         return;
     }
@@ -85,9 +85,9 @@ Java_org_levimc_launcher_core_mods_ModManager_nativeOnLaunched(
     androidMain = reinterpret_cast<decltype(androidMain)>(dlsym(handle, "android_main"));
 
     if (!onCreate || !androidMain) {
-        logger.error("Failed to resolve required symbols");
+        preloader_logger.error("Failed to resolve required symbols");
     } else {
-        logger.debug("Successfully loaded Minecraft native functions");
+        preloader_logger.debug("Successfully loaded Minecraft native functions");
     }
     env->ReleaseStringUTFChars(libPath, path);
 }
@@ -101,11 +101,11 @@ JNIEXPORT jboolean JNICALL Java_org_levimc_launcher_core_mods_ModManager_nativeL
         func(g_vm, mod);
       }
     } else {
-        logger.error("failed to load mod: %s", path);
+        preloader_logger.error("failed to load mod: %s", path);
         return JNI_FALSE;
     }
     env->ReleaseStringUTFChars(libPath, path);
-    logger.info("successful loading mod: %s", path);
+    preloader_logger.info("successful loading mod: %s", path);
     return JNI_TRUE;
 }
 
@@ -124,7 +124,7 @@ JNIEXPORT jboolean JNICALL Java_org_levimc_launcher_preloader_PreloaderInput_nat
 static void RegisterTouchCallback(PreloaderInput_OnTouch_Fn callback) {
     std::lock_guard<std::mutex> lock(g_callbackMutex);
     g_touchCallbacks.push_back(callback);
-    logger.debug("Registered touch callback");
+    preloader_logger.debug("Registered touch callback");
 }
 
 static PreloaderInput_Interface g_inputInterface = {
