@@ -1,4 +1,5 @@
 #include "pl/Signature.h"
+#include "pl/Logger.h"
 #include <cstdint>
 #include <dlfcn.h>
 #include <fstream>
