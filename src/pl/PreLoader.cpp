@@ -93,6 +93,7 @@ Java_org_levimc_launcher_core_mods_ModManager_nativeOnLaunched(
 }
 
 JNIEXPORT jboolean JNICALL Java_org_levimc_launcher_core_mods_ModManager_nativeLoadMod(JNIEnv* env, jclass clazz, jstring libPath, jobject modObj) {
+    Mod::initJNI(env);
     Mod mod(env, modObj);
     const char* path = env->GetStringUTFChars(libPath, nullptr);
     if (void *handle = dlopen(path, RTLD_NOW)) {
