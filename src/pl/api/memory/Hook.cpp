@@ -12,13 +12,15 @@
 
 namespace memory {
 
-FuncPtr resolveIdentifier(char const *identifier) {
-  return reinterpret_cast<FuncPtr>(pl::signature::resolveSignature(identifier));
+FuncPtr resolveIdentifier(char const *identifier, char const *moduleName) {
+  return reinterpret_cast<FuncPtr>(
+      pl::signature::pl_resolve_signature(identifier, moduleName));
 }
 
-FuncPtr resolveIdentifier(std::initializer_list<const char *> identifiers) {
+FuncPtr resolveIdentifier(std::initializer_list<const char *> identifiers,
+                          char const *moduleName) {
   for (const auto &identifier : identifiers) {
-    FuncPtr result = resolveIdentifier(identifier);
+    FuncPtr result = resolveIdentifier(identifier, moduleName);
     if (result != nullptr) {
       return result;
     }
@@ -35,4 +37,5 @@ int hook(FuncPtr target, FuncPtr detour, FuncPtr *originalFunc,
 bool unhook(FuncPtr target, FuncPtr detour, bool) {
   return pl::hook::pl_unhook(target, detour);
 }
+
 } // namespace memory
