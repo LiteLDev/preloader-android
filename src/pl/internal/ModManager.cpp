@@ -1,5 +1,6 @@
 #include "ModManager.h"
 
+#include <android/log.h>
 #include <algorithm>
 #include <cstdint>
 #include <dlfcn.h>
@@ -17,6 +18,17 @@ constexpr const char *kManifestFileName = "manifest.json";
 constexpr const char *kPreloadNativeType = "preload-native";
 
 auto &logger = preloader_logger;
+
+void LogRaw(int priority, const char *format, const char *path,
+            const char *detail = nullptr) {
+  constexpr const char *kTag = "Preloader";
+  if (detail) {
+    __android_log_print(priority, kTag, format, path, detail);
+    return;
+  }
+
+  __android_log_print(priority, kTag, format, path);
+}
 
 struct ModConfigEntry {
   bool enabled = false;
@@ -315,18 +327,19 @@ bool ModManager::LoadModLibrary(const std::filesystem::path &libraryPath,
   const std::string libraryPathString = modInfoStorage.libraryPath;
   void *handle = dlopen(libraryPathString.c_str(), RTLD_NOW);
   if (!handle) {
-    logger.error("Failed to load mod library %s: %s", libraryPathString.c_str(),
-                 dlerror());
+    LogRaw(ANDROID_LOG_ERROR, "Failed to load mod library %s: %s",
+           libraryPathString.c_str(), dlerror());
     return false;
   }
 
   if (!InvokeModEntry(handle, vm, &modInfoStorage.info)) {
-    logger.error("No supported mod entry found in %s",
-                 libraryPathString.c_str());
+    LogRaw(ANDROID_LOG_ERROR, "No supported mod entry found in %s",
+           libraryPathString.c_str());
     return false;
   }
 
-  logger.info("Loaded mod library: %s", libraryPathString.c_str());
+  LogRaw(ANDROID_LOG_INFO, "Loaded mod library: %s",
+         libraryPathString.c_str());
   return true;
 }
 

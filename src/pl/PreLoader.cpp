@@ -19,6 +19,7 @@
 namespace {
 
 auto &logger = preloader_logger;
+constexpr const char *kEmptyPath = "<empty>";
 
 JavaVM *g_vm = nullptr;
 
@@ -61,9 +62,15 @@ bool ResolveMinecraftEntryPoints(void *handle) {
 
 void InitializeEnabledMods() {
     if (g_modsInitialized || g_modsDir.empty()) {
+        if (g_modsDir.empty()) {
+            logger.warn("Skipping mod initialization because modsDir is empty");
+        }
         return;
     }
 
+    logger.info("Initializing enabled mods from {} using cache {}",
+                g_modsDir.empty() ? kEmptyPath : g_modsDir,
+                g_cacheDir.empty() ? kEmptyPath : g_cacheDir);
     ModManager::LoadAndInitializeEnabledMods(g_modsDir, g_cacheDir, g_vm);
     g_modsInitialized = true;
     logger.debug("Mods initialized successfully");
@@ -76,9 +83,10 @@ bool BootstrapMinecraftLibrary(JNIEnv *env, jstring libPath) {
         return false;
     }
 
+    logger.info("Bootstrapping Minecraft library from {}", path);
     void *handle = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
     if (!handle) {
-        logger.error("Failed to load library: %s", dlerror());
+        logger.error("Failed to load library {}: {}", path, dlerror());
         env->ReleaseStringUTFChars(libPath, path);
         return false;
     }
@@ -133,35 +141,38 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     auto paths = AndroidUtils::FetchContextPaths(env);
     g_modsDir = std::move(paths.modsDir);
     g_cacheDir = std::move(paths.cacheDir);
+    logger.info("JNI_OnLoad paths modsDir={} cacheDir={}",
+                g_modsDir.empty() ? kEmptyPath : g_modsDir,
+                g_cacheDir.empty() ? kEmptyPath : g_cacheDir);
 
     return JNI_VERSION_1_4;
 }
 
-JNIEXPORT void JNICALL
+JNIEXPORT jboolean JNICALL
 Java_org_levimc_launcher_core_minecraft_MinecraftActivity_nativeOnLauncherLoaded(
         JNIEnv *env,
         jobject thiz,
         jstring libPath) {
     (void) thiz;
-    BootstrapMinecraftLibrary(env, libPath);
+    return BootstrapMinecraftLibrary(env, libPath) ? JNI_TRUE : JNI_FALSE;
 }
 
-JNIEXPORT void JNICALL
+JNIEXPORT jboolean JNICALL
 Java_org_levimc_launcher_core_minecraft_MinecraftLauncher_nativeOnLauncherLoaded(
         JNIEnv *env,
         jobject thiz,
         jstring libPath) {
     (void) thiz;
-    BootstrapMinecraftLibrary(env, libPath);
+    return BootstrapMinecraftLibrary(env, libPath) ? JNI_TRUE : JNI_FALSE;
 }
 
-JNIEXPORT void JNICALL
+JNIEXPORT jboolean JNICALL
 Java_org_levimc_launcher_core_mods_ModManager_nativeOnLaunched(
         JNIEnv *env,
         jclass clazz,
         jstring libPath) {
     (void) clazz;
-    BootstrapMinecraftLibrary(env, libPath);
+    return BootstrapMinecraftLibrary(env, libPath) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL
