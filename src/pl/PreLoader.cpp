@@ -2,138 +2,216 @@
 // Created by mrjar on 10/5/2025.
 //
 
-#include <jni.h>
 #include <android/native_activity.h>
 #include <dlfcn.h>
-#include <android/log.h>
-#include "internal/AndroidUtils.h"
-#include "internal/ModManager.h"
-#include "Logger.h"
-#include "PreloaderInput.h"
+#include <jni.h>
 
-pl::log::Logger logger("NativeLoader");
+#include <mutex>
+#include <string>
+#include <vector>
 
-static std::vector<PreloaderInput_OnTouch_Fn> g_touchCallbacks;
-static std::mutex g_callbackMutex;
+#include "pl/Logger.h"
+#include "pl/Mod.h"
+#include "pl/PreloaderInput.h"
+#include "pl/internal/AndroidUtils.h"
+#include "pl/internal/ModManager.h"
+
+namespace {
+
+auto &logger = preloader_logger;
 
 JavaVM *g_vm = nullptr;
 
-static std::string g_modsDir;
-static std::string g_cacheDir;
-static bool g_modsInitialized = false;
+std::string g_modsDir;
+std::string g_cacheDir;
+std::vector<PreloaderInput_OnTouch_Fn> g_touchCallbacks;
+std::mutex g_callbackMutex;
+bool g_modsInitialized = false;
 
-static void (*onCreate)(ANativeActivity*, void*, size_t) = nullptr;
-static void (*onFinish)(ANativeActivity*) = nullptr;
-static void (*androidMain)(struct android_app*) = nullptr;
+void (*g_onCreate)(ANativeActivity *, void *, size_t) = nullptr;
+void (*g_onFinish)(ANativeActivity *) = nullptr;
+void (*g_androidMain)(struct android_app *) = nullptr;
+
+void RegisterTouchCallback(PreloaderInput_OnTouch_Fn callback) {
+    std::lock_guard<std::mutex> lock(g_callbackMutex);
+    g_touchCallbacks.push_back(callback);
+    logger.debug("Registered touch callback");
+}
+
+PreloaderInput_Interface g_inputInterface = {
+        .RegisterTouchCallback = RegisterTouchCallback
+};
+
+bool ResolveMinecraftEntryPoints(void *handle) {
+    g_onCreate = reinterpret_cast<decltype(g_onCreate)>(
+        dlsym(handle, "ANativeActivity_onCreate"));
+    g_onFinish = reinterpret_cast<decltype(g_onFinish)>(
+        dlsym(handle, "ANativeActivity_finish"));
+    g_androidMain = reinterpret_cast<decltype(g_androidMain)>(
+        dlsym(handle, "android_main"));
+
+    if (!g_onCreate || !g_androidMain) {
+        logger.error("Failed to resolve required symbols");
+        return false;
+    }
+
+    logger.debug("Successfully loaded Minecraft native functions");
+    return true;
+}
+
+void InitializeEnabledMods() {
+    if (g_modsInitialized || g_modsDir.empty()) {
+        return;
+    }
+
+    ModManager::LoadAndInitializeEnabledMods(g_modsDir, g_cacheDir, g_vm);
+    g_modsInitialized = true;
+    logger.debug("Mods initialized successfully");
+}
+
+bool BootstrapMinecraftLibrary(JNIEnv *env, jstring libPath) {
+    const char *path = env->GetStringUTFChars(libPath, nullptr);
+    if (!path) {
+        logger.error("Failed to access library path");
+        return false;
+    }
+
+    void *handle = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
+    if (!handle) {
+        logger.error("Failed to load library: %s", dlerror());
+        env->ReleaseStringUTFChars(libPath, path);
+        return false;
+    }
+
+    const bool resolved = ResolveMinecraftEntryPoints(handle);
+    env->ReleaseStringUTFChars(libPath, path);
+
+    if (resolved) {
+        InitializeEnabledMods();
+    }
+
+    return resolved;
+}
+
+} // namespace
 
 extern "C" {
 
-
-JNIEXPORT void ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_t savedStateSize) {
-    if (onCreate) {
-        onCreate(activity, savedState, savedStateSize);
+JNIEXPORT void ANativeActivity_onCreate(ANativeActivity *activity,
+                                        void *savedState,
+                                        size_t savedStateSize) {
+    if (g_onCreate) {
+        g_onCreate(activity, savedState, savedStateSize);
     } else {
         logger.error("ANativeActivity_onCreate function not loaded");
     }
 }
 
-JNIEXPORT void ANativeActivity_finish(ANativeActivity* activity) {
-    if (onFinish) {
-        onFinish(activity);
+JNIEXPORT void ANativeActivity_finish(ANativeActivity *activity) {
+    if (g_onFinish) {
+        g_onFinish(activity);
     }
 }
 
-JNIEXPORT void android_main(struct android_app* state) {
-    if (androidMain) {
-        androidMain(state);
+JNIEXPORT void android_main(struct android_app *state) {
+    if (g_androidMain) {
+        g_androidMain(state);
     } else {
         logger.error("android_main function not loaded");
     }
 }
 
-JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {
+JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved) {
+    (void) reserved;
+
     g_vm = vm;
-    JNIEnv* env = nullptr;
-    if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_4) != JNI_OK)
+    JNIEnv *env = nullptr;
+    if (vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_4) != JNI_OK) {
         return JNI_VERSION_1_4;
+    }
 
     auto paths = AndroidUtils::FetchContextPaths(env);
-    g_modsDir = paths.modsDir;
-    g_cacheDir = paths.cacheDir;
+    g_modsDir = std::move(paths.modsDir);
+    g_cacheDir = std::move(paths.cacheDir);
 
     return JNI_VERSION_1_4;
 }
 
 JNIEXPORT void JNICALL
 Java_org_levimc_launcher_core_minecraft_MinecraftActivity_nativeOnLauncherLoaded(
-        JNIEnv* env,
+        JNIEnv *env,
         jobject thiz,
-        jstring libPath
-) {
-    const char* path = env->GetStringUTFChars(libPath, nullptr);
-
-    void* handle = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
-    if (!handle) {
-        logger.error("Failed to load library: %s", dlerror());
-        env->ReleaseStringUTFChars(libPath, path);
-        return;
-    }
-
-    onCreate = reinterpret_cast<decltype(onCreate)>(dlsym(handle, "ANativeActivity_onCreate"));
-    onFinish = reinterpret_cast<decltype(onFinish)>(dlsym(handle, "ANativeActivity_finish"));
-    androidMain = reinterpret_cast<decltype(androidMain)>(dlsym(handle, "android_main"));
-
-    if (!onCreate || !androidMain) {
-        logger.error("Failed to resolve required symbols");
-    } else {
-        logger.debug("Successfully loaded Minecraft native functions");
-    }
-    env->ReleaseStringUTFChars(libPath, path);
-    if (!g_modsInitialized && !g_modsDir.empty()) {
-        ModManager::LoadAndInitializeEnabledMods(g_modsDir, g_cacheDir, g_vm);
-        g_modsInitialized = true;
-        logger.debug("Mods initialized successfully");
-    }
+        jstring libPath) {
+    (void) thiz;
+    BootstrapMinecraftLibrary(env, libPath);
 }
 
 JNIEXPORT void JNICALL
 Java_org_levimc_launcher_core_minecraft_MinecraftLauncher_nativeOnLauncherLoaded(
-        JNIEnv* env,
+        JNIEnv *env,
         jobject thiz,
-        jstring libPath
-) {
-
-
-    Java_org_levimc_launcher_core_minecraft_MinecraftActivity_nativeOnLauncherLoaded(env, thiz, libPath);
+        jstring libPath) {
+    (void) thiz;
+    BootstrapMinecraftLibrary(env, libPath);
 }
 
-
-
-JNIEXPORT jboolean JNICALL Java_org_levimc_launcher_preloader_PreloaderInput_nativeOnTouch(
-        JNIEnv* env, jclass clazz, jint action, jint pointerId, jfloat x, jfloat y) {
-
-std::lock_guard<std::mutex> lock(g_callbackMutex);
-bool consumed = false;
-for (auto callback : g_touchCallbacks) {
-if (callback) {
-consumed |= callback(action, pointerId, x, y);
-}
-}
-return consumed ? JNI_TRUE : JNI_FALSE;
+JNIEXPORT void JNICALL
+Java_org_levimc_launcher_core_mods_ModManager_nativeOnLaunched(
+        JNIEnv *env,
+        jclass clazz,
+        jstring libPath) {
+    (void) clazz;
+    BootstrapMinecraftLibrary(env, libPath);
 }
 
-static void RegisterTouchCallback(PreloaderInput_OnTouch_Fn callback) {
+JNIEXPORT jboolean JNICALL
+Java_org_levimc_launcher_core_mods_ModManager_nativeLoadMod(
+        JNIEnv *env,
+        jclass clazz,
+        jstring libPath,
+        jobject modObj) {
+    (void) clazz;
+    (void) modObj;
+
+    if (!g_vm) {
+        logger.error("JavaVM is not initialized");
+        return JNI_FALSE;
+    }
+
+    const char *path = env->GetStringUTFChars(libPath, nullptr);
+    if (!path) {
+        logger.error("Failed to access mod library path");
+        return JNI_FALSE;
+    }
+
+    const bool loaded = ModManager::LoadModLibrary(path, g_vm);
+    env->ReleaseStringUTFChars(libPath, path);
+    return loaded ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_org_levimc_launcher_preloader_PreloaderInput_nativeOnTouch(
+        JNIEnv *env,
+        jclass clazz,
+        jint action,
+        jint pointerId,
+        jfloat x,
+        jfloat y) {
+    (void) env;
+    (void) clazz;
+
     std::lock_guard<std::mutex> lock(g_callbackMutex);
-    g_touchCallbacks.push_back(callback);
-    logger.debug("Registered touch callback");
+    bool consumed = false;
+    for (auto callback : g_touchCallbacks) {
+        if (callback) {
+            consumed |= callback(action, pointerId, x, y);
+        }
+    }
+    return consumed ? JNI_TRUE : JNI_FALSE;
 }
 
-static PreloaderInput_Interface g_inputInterface = {
-        .RegisterTouchCallback = RegisterTouchCallback
-};
-
-__attribute__((visibility("default"))) PreloaderInput_Interface* GetPreloaderInput() {
+PLAPI PreloaderInput_Interface *GetPreloaderInput() {
     return &g_inputInterface;
 }
 
-}
+} // extern "C"

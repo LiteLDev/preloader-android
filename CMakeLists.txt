@@ -10,6 +10,8 @@ add_library(preloader SHARED ${PRELOADER_SRC})
 
 target_include_directories(preloader PUBLIC src)
 target_compile_definitions(preloader PRIVATE PRELOADER_EXPORT UNICODE)
+target_compile_options(preloader PRIVATE
+        $<$<COMPILE_LANG_AND_ID:CXX,Clang,GNU>:-fvisibility=hidden -fvisibility-inlines-hidden>)
 
 include(FetchContent)
 FetchContent_Declare(
@@ -47,6 +49,23 @@ install(TARGETS preloader
         LIBRARY DESTINATION lib
         RUNTIME DESTINATION bin)
 
-install(DIRECTORY src/
-        DESTINATION include
-        FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp")
+install(FILES
+        src/pl/Gloss.h
+        src/pl/Hook.h
+        src/pl/Logger.h
+        src/pl/Mod.h
+        src/pl/Patch.h
+        src/pl/PreloaderInput.h
+        src/pl/Signature.h
+        DESTINATION include/pl)
+
+install(FILES
+        src/pl/api/Macro.h
+        src/pl/api/Encoding.h
+        src/pl/api/Types.h
+        DESTINATION include/pl/api)
+
+install(FILES
+        src/pl/api/memory/Hook.h
+        src/pl/api/memory/Memory.h
+        DESTINATION include/pl/api/memory)

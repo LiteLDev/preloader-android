@@ -1,13 +1,17 @@
 #include "Signature.h"
+
+#include <cinttypes>
+#include <cstdio>
 #include <cstdint>
 #include <dlfcn.h>
 #include <fstream>
 #include <shared_mutex>
+#include <sstream>
 #include <string>
+#include <sys/stat.h>
 #include <unordered_map>
 #include <vector>
-#include <sstream>
-#include <sys/stat.h>
+
 #include "Logger.h"
 
 namespace pl::signature {
@@ -85,7 +89,8 @@ namespace pl::signature {
             std::getline(iss, path);
 
             uintptr_t start = 0, end = 0;
-            if (sscanf(addr.c_str(), "%lx-%lx", &start, &end) != 2) continue;
+            if (std::sscanf(addr.c_str(), "%" SCNxPTR "-%" SCNxPTR,
+                            &start, &end) != 2) continue;
             if (end <= start) continue;
 
             out.base = start;

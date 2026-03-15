@@ -1,6 +1,6 @@
 #pragma once
 
-#include "pl/internal/Macro.h"
+#include "pl/api/Macro.h"
 
 #ifdef __cplusplus
 namespace pl::hook {
