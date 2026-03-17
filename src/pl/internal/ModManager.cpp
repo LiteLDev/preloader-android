@@ -1,11 +1,13 @@
 #include "ModManager.h"
 
-#include <android/log.h>
 #include <algorithm>
+#include <android/log.h>
 #include <cstdint>
 #include <dlfcn.h>
 #include <fstream>
+#include <mutex>
 #include <optional>
+#include <unordered_set>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -16,8 +18,12 @@ namespace {
 constexpr const char *kModLoadSymbol = "LeviMod_Load";
 constexpr const char *kManifestFileName = "manifest.json";
 constexpr const char *kPreloadNativeType = "preload-native";
+constexpr int kLoadedModLookupFlags = RTLD_NOLOAD | RTLD_NOW;
+constexpr int kModDlopenFlags = RTLD_NOW | RTLD_GLOBAL;
 
 auto &logger = preloader_logger;
+std::mutex gInitializedModsMutex;
+std::unordered_set<std::string> gInitializedModLibraries;
 
 void LogRaw(int priority, const char *format, const char *path,
             const char *detail = nullptr) {
@@ -30,11 +36,6 @@ void LogRaw(int priority, const char *format, const char *path,
   __android_log_print(priority, kTag, format, path);
 }
 
-struct ModConfigEntry {
-  bool enabled = false;
-  int32_t order = 0;
-};
-
 struct ParsedModDirectory {
   std::string id;
   std::string displayName;
@@ -45,11 +46,6 @@ struct ParsedModDirectory {
   std::string iconPath;
   std::filesystem::path rootPath;
   std::filesystem::path manifestPath;
-};
-
-struct PendingModLoad {
-  std::filesystem::path libraryPath;
-  int32_t order = 0;
 };
 
 struct RuntimeModInfoStorage {
@@ -65,6 +61,17 @@ struct RuntimeModInfoStorage {
   std::string modRootPath;
   PLModInfo info{};
 };
+
+std::string NormalizeLibraryPath(const std::filesystem::path &libraryPath) {
+  namespace fs = std::filesystem;
+
+  std::error_code errorCode;
+  const fs::path canonicalPath = fs::weakly_canonical(libraryPath, errorCode);
+  if (!errorCode && !canonicalPath.empty())
+    return canonicalPath.string();
+
+  return libraryPath.lexically_normal().string();
+}
 
 bool EndsWithSo(const std::string &filename) {
   return filename.size() > 3 &&
@@ -174,51 +181,6 @@ ParseModDirectory(const std::filesystem::path &modDirectory) {
   };
 }
 
-std::optional<ModConfigEntry>
-GetModConfigEntry(const std::filesystem::path &jsonPath,
-                  const std::string &modId) {
-  if (modId.empty() || !std::filesystem::exists(jsonPath))
-    return std::nullopt;
-
-  std::ifstream jsonFile(jsonPath);
-  if (!jsonFile)
-    return std::nullopt;
-
-  nlohmann::json modsConfig;
-  try {
-    jsonFile >> modsConfig;
-  } catch (...) {
-    return std::nullopt;
-  }
-
-  if (modsConfig.is_object()) {
-    auto it = modsConfig.find(modId);
-    if (it != modsConfig.end() && it.value().is_boolean())
-      return ModConfigEntry{it.value().get<bool>(), 0};
-  } else if (modsConfig.is_array()) {
-    int32_t fallbackOrder = 0;
-    for (const auto &item : modsConfig) {
-      if (!item.is_object() || !item.contains("name") ||
-          !item["name"].is_string()) {
-        ++fallbackOrder;
-        continue;
-      }
-
-      if (item["name"].get<std::string>() != modId) {
-        ++fallbackOrder;
-        continue;
-      }
-
-      return ModConfigEntry{
-          item.value("enabled", false),
-          item.value("order", fallbackOrder),
-      };
-    }
-  }
-
-  return std::nullopt;
-}
-
 std::optional<std::filesystem::path>
 FindModRootForLibraryPath(const std::filesystem::path &libraryPath) {
   namespace fs = std::filesystem;
@@ -280,7 +242,8 @@ bool CreateRuntimeModInfo(const std::filesystem::path &libraryPath,
                 expectedLibraryPath.string(), requestedLibraryPath.string());
   }
 
-  if (!fs::exists(expectedLibraryPath) || !fs::is_regular_file(expectedLibraryPath)) {
+  if (!fs::exists(expectedLibraryPath) ||
+      !fs::is_regular_file(expectedLibraryPath)) {
     logger.error("Resolved mod library {} does not exist",
                  expectedLibraryPath.string());
     return false;
@@ -300,23 +263,29 @@ bool CreateRuntimeModInfo(const std::filesystem::path &libraryPath,
   return true;
 }
 
-bool InvokeModEntry(void *handle, JavaVM *vm, const PLModInfo *modInfo) {
-  if (auto load =
-          reinterpret_cast<PLModLoadFunc>(dlsym(handle, kModLoadSymbol))) {
-    load(vm, modInfo);
-    return true;
+PLModLoadFunc ResolveModEntry(void *handle) {
+  return reinterpret_cast<PLModLoadFunc>(dlsym(handle, kModLoadSymbol));
+}
+
+bool IsModAlreadyInitialized(const std::string &normalizedLibraryPath) {
+  std::lock_guard<std::mutex> lock(gInitializedModsMutex);
+  return gInitializedModLibraries.contains(normalizedLibraryPath);
+}
+
+void MarkModInitialized(const std::string &normalizedLibraryPath) {
+  std::lock_guard<std::mutex> lock(gInitializedModsMutex);
+  gInitializedModLibraries.insert(normalizedLibraryPath);
+}
+
+void *AcquireModHandle(const std::string &libraryPath) {
+  if (void *handle = dlopen(libraryPath.c_str(), kLoadedModLookupFlags)) {
+    return handle;
   }
 
-  return false;
+  return dlopen(libraryPath.c_str(), kModDlopenFlags);
 }
 
 } // namespace
-
-bool ModManager::IsModEnabled(const std::filesystem::path &jsonPath,
-                              const std::string &modId) {
-  const auto configEntry = GetModConfigEntry(jsonPath, modId);
-  return configEntry.has_value() && configEntry->enabled;
-}
 
 bool ModManager::LoadModLibrary(const std::filesystem::path &libraryPath,
                                 JavaVM *vm) {
@@ -325,59 +294,26 @@ bool ModManager::LoadModLibrary(const std::filesystem::path &libraryPath,
     return false;
 
   const std::string libraryPathString = modInfoStorage.libraryPath;
-  void *handle = dlopen(libraryPathString.c_str(), RTLD_NOW);
+  const std::string normalizedLibraryPath =
+      NormalizeLibraryPath(modInfoStorage.libraryPath);
+
+  if (IsModAlreadyInitialized(normalizedLibraryPath)) {
+
+    return true;
+  }
+
+  void *handle = AcquireModHandle(libraryPathString);
   if (!handle) {
     LogRaw(ANDROID_LOG_ERROR, "Failed to load mod library %s: %s",
            libraryPathString.c_str(), dlerror());
     return false;
   }
 
-  if (!InvokeModEntry(handle, vm, &modInfoStorage.info)) {
-    LogRaw(ANDROID_LOG_ERROR, "No supported mod entry found in %s",
-           libraryPathString.c_str());
-    return false;
+  if (auto load = ResolveModEntry(handle)) {
+    load(vm, &modInfoStorage.info);
   }
 
-  LogRaw(ANDROID_LOG_INFO, "Loaded mod library: %s",
-         libraryPathString.c_str());
+  MarkModInitialized(normalizedLibraryPath);
+
   return true;
-}
-
-void ModManager::LoadAndInitializeEnabledMods(const std::string &modsDir,
-                                              const std::string &dataDir,
-                                              JavaVM *vm) {
-  namespace fs = std::filesystem;
-  const fs::path modsPath(modsDir);
-  const fs::path configPath = modsPath / "mods_config.json";
-  if (!fs::exists(modsPath))
-    return;
-
-  std::vector<PendingModLoad> pendingLoads;
-
-  for (const auto &entry : fs::directory_iterator(modsPath)) {
-    if (!entry.is_directory())
-      continue;
-
-    const auto parsedMod = ParseModDirectory(entry.path());
-    if (!parsedMod.has_value())
-      continue;
-
-    const auto configEntry = GetModConfigEntry(configPath, parsedMod->id);
-    if (!configEntry.has_value() || !configEntry->enabled)
-      continue;
-
-    pendingLoads.push_back(PendingModLoad{
-        .libraryPath = fs::path(dataDir) / "mods" / parsedMod->id /
-                       parsedMod->entryPath,
-        .order = configEntry->order,
-    });
-  }
-
-  std::stable_sort(pendingLoads.begin(), pendingLoads.end(),
-                   [](const PendingModLoad &lhs, const PendingModLoad &rhs) {
-                     return lhs.order < rhs.order;
-                   });
-
-  for (const auto &pendingLoad : pendingLoads)
-    LoadModLibrary(pendingLoad.libraryPath, vm);
 }
