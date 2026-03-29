@@ -9,5 +9,5 @@ namespace pl::signature {
 PLCAPI uintptr_t pl_resolve_signature(const char *signature,
                                       const char *moduleName);
 #ifdef __cplusplus
-} // namespace pl::hook
+} // namespace pl::signature
 #endif
