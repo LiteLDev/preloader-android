@@ -3,8 +3,11 @@
 #include <cinttypes>
 #include <cstdio>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <dlfcn.h>
 #include <fstream>
+#include <mutex>
 #include <shared_mutex>
 #include <sstream>
 #include <string>
@@ -21,9 +24,13 @@ namespace pl::signature {
         std::vector<bool> mask;
     };
 
-    struct ModuleInfo {
-        uintptr_t base = 0;
+    struct MemoryRegion {
+        uintptr_t start = 0;
         size_t size = 0;
+    };
+
+    struct ModuleInfo {
+        std::vector<MemoryRegion> regions;
         void *handle = nullptr;
         bool initialized = false;
     };
@@ -38,13 +45,14 @@ namespace pl::signature {
         return table;
     }
 
-    static const uint8_t *bmSearch(const uint8_t *base, const uint8_t *end,
+    static const uint8_t *bmSearch(const uint8_t *base, size_t size,
                                    const SigPattern &sigpat,
                                    const std::vector<size_t> &bmhTable) {
         const size_t len = sigpat.pattern.size();
-        if (len == 0 || end <= base) return nullptr;
+        if (len == 0 || size < len) return nullptr;
 
-        for (const uint8_t *pos = base; pos <= end;) {
+        const uint8_t *last = base + size - len;
+        for (const uint8_t *pos = base; pos <= last;) {
             size_t i = len - 1;
             while (i < len && (!sigpat.mask[i] || pos[i] == sigpat.pattern[i])) {
                 if (i == 0) return pos;
@@ -56,11 +64,12 @@ namespace pl::signature {
         return nullptr;
     }
 
-    static const uint8_t *maskScan(const uint8_t *start, const uint8_t *end, const SigPattern &pat) {
+    static const uint8_t *maskScan(const uint8_t *start, size_t size, const SigPattern &pat) {
         const size_t patSize = pat.pattern.size();
-        if (patSize == 0) return nullptr;
+        if (patSize == 0 || size < patSize) return nullptr;
 
-        for (const uint8_t *ptr = start; ptr <= end; ++ptr) {
+        const uint8_t *last = start + size - patSize;
+        for (const uint8_t *ptr = start; ptr <= last; ++ptr) {
             bool matched = true;
             for (size_t i = 0; i < patSize; ++i) {
                 if (pat.mask[i] && ptr[i] != pat.pattern[i]) {
@@ -74,6 +83,22 @@ namespace pl::signature {
         return nullptr;
     }
 
+
+    static bool isReadableMapping(const std::string &perms) {
+        return !perms.empty() && perms[0] == 'r';
+    }
+
+    static void addReadableRegion(ModuleInfo &module, uintptr_t start, uintptr_t end) {
+        if (!module.regions.empty()) {
+            MemoryRegion &last = module.regions.back();
+            if (last.start + last.size == start) {
+                last.size += static_cast<size_t>(end - start);
+                return;
+            }
+        }
+
+        module.regions.push_back({start, static_cast<size_t>(end - start)});
+    }
 
     static bool getModuleInfo(const std::string &name, ModuleInfo &out) {
         std::ifstream maps("/proc/self/maps");
@@ -93,19 +118,32 @@ namespace pl::signature {
                             &start, &end) != 2) continue;
             if (end <= start) continue;
 
-            out.base = start;
-            out.size = end - start;
-            out.handle = dlopen(name.c_str(), RTLD_LAZY | RTLD_NOLOAD);
-            if (!out.handle) {
-                out.handle = dlopen(name.c_str(), RTLD_LAZY);
-                if (!out.handle) {
-                    return false;
-                }
-            }
-            out.initialized = true;
-            return true;
+            if (!isReadableMapping(perms)) continue;
+
+            addReadableRegion(out, start, end);
         }
-        return false;
+
+        if (out.regions.empty()) return false;
+
+        out.handle = dlopen(name.c_str(), RTLD_LAZY | RTLD_NOLOAD);
+        if (!out.handle) {
+            out.handle = dlopen(name.c_str(), RTLD_LAZY);
+            if (!out.handle) {
+                return false;
+            }
+        }
+
+        out.initialized = true;
+        return true;
+    }
+
+    static const uint8_t *scanRegion(const MemoryRegion &region, const SigPattern &sigpat,
+                                     const std::vector<size_t> &table) {
+        const uint8_t *start = reinterpret_cast<const uint8_t *>(region.start);
+        const uint8_t *foundPtr = bmSearch(start, region.size, sigpat, table);
+        if (!foundPtr)
+            foundPtr = maskScan(start, region.size, sigpat);
+        return foundPtr;
     }
 
     static std::unordered_map<std::string, ModuleInfo> moduleCache;
@@ -136,8 +174,10 @@ namespace pl::signature {
     }
 
     uintptr_t pl_resolve_signature(const char* signature, const char* moduleName) {
+        if (!signature || !moduleName) return 0;
+
         std::string combinedKey;
-        combinedKey.reserve(strlen(moduleName) + strlen(signature) + 2);
+        combinedKey.reserve(std::strlen(moduleName) + std::strlen(signature) + 2);
         combinedKey.append(moduleName).append("::").append(signature);
 
         {
@@ -180,14 +220,14 @@ namespace pl::signature {
             }
         }
 
-        if (sigpat.pattern.empty()) return mod.base;
+        if (sigpat.pattern.empty())
+            return mod.regions.empty() ? 0 : mod.regions.front().start;
 
-        const uint8_t *start = reinterpret_cast<const uint8_t *>(mod.base);
-        const uint8_t *end = start + mod.size - sigpat.pattern.size();
-
-        const uint8_t *foundPtr = bmSearch(start, end, sigpat, table);
-        if (!foundPtr)
-            foundPtr = maskScan(start, end, sigpat);
+        const uint8_t *foundPtr = nullptr;
+        for (const auto &region : mod.regions) {
+            foundPtr = scanRegion(region, sigpat, table);
+            if (foundPtr) break;
+        }
 
         uintptr_t result = foundPtr ? reinterpret_cast<uintptr_t>(foundPtr) : 0;
 
