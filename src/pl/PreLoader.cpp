@@ -23,8 +23,7 @@ namespace {
     ANativeActivity *g_nativeActivity = nullptr;
 
     std::vector<PreloaderInput_OnTouch_Fn>   g_touchCallbacks;
-    std::vector<PreloaderInput_OnKeyChar_Fn> g_keyCharCallbacks;
-    std::vector<PreloaderInput_OnKeyDown_Fn> g_keyDownCallbacks;
+    std::vector<PreloaderInput_OnKeyEvent_Fn> g_keyEventCallbacks;
     std::mutex g_callbackMutex;
 
     void (*g_onCreate)(ANativeActivity *, void *, size_t) = nullptr;
@@ -36,14 +35,9 @@ namespace {
         g_touchCallbacks.push_back(callback);
     }
 
-    void RegisterKeyCharCallback(PreloaderInput_OnKeyChar_Fn callback) {
+    void RegisterKeyEventCallback(PreloaderInput_OnKeyEvent_Fn callback) {
         std::lock_guard<std::mutex> lock(g_callbackMutex);
-        g_keyCharCallbacks.push_back(callback);
-    }
-
-    void RegisterKeyDownCallback(PreloaderInput_OnKeyDown_Fn callback) {
-        std::lock_guard<std::mutex> lock(g_callbackMutex);
-        g_keyDownCallbacks.push_back(callback);
+        g_keyEventCallbacks.push_back(callback);
     }
 
     void CallActivityVoidMethod(const char* methodName) {
@@ -85,8 +79,7 @@ namespace {
 
     PreloaderInput_Interface g_inputInterface = {
             .RegisterTouchCallback   = RegisterTouchCallback,
-            .RegisterKeyCharCallback = RegisterKeyCharCallback,
-            .RegisterKeyDownCallback = RegisterKeyDownCallback,
+            .RegisterKeyEventCallback = RegisterKeyEventCallback,
             .ShowKeyboard            = ShowKeyboard,
             .HideKeyboard            = HideKeyboard,
     };
@@ -219,33 +212,21 @@ Java_org_levimc_launcher_preloader_PreloaderInput_nativeOnTouch(
 }
 
 JNIEXPORT jboolean JNICALL
-Java_org_levimc_launcher_preloader_PreloaderInput_nativeOnKeyChar(
+Java_org_levimc_launcher_preloader_PreloaderInput_nativeOnKeyEvent(
         JNIEnv *env,
         jclass clazz,
-        jint unicodeChar) {
+        jint keyCode,
+        jint unicodeChar,
+        jboolean isKeyDown
+) {
     (void) env;
     (void) clazz;
 
     std::lock_guard<std::mutex> lock(g_callbackMutex);
     bool consumed = false;
-    for (auto callback : g_keyCharCallbacks) {
-        if (callback) consumed |= callback(static_cast<unsigned int>(unicodeChar));
-    }
-    return consumed ? JNI_TRUE : JNI_FALSE;
-}
-
-JNIEXPORT jboolean JNICALL
-Java_org_levimc_launcher_preloader_PreloaderInput_nativeOnKeyDown(
-        JNIEnv *env,
-        jclass clazz,
-        jint keyCode) {
-    (void) env;
-    (void) clazz;
-
-    std::lock_guard<std::mutex> lock(g_callbackMutex);
-    bool consumed = false;
-    for (auto callback : g_keyDownCallbacks) {
-        if (callback) consumed |= callback(static_cast<int>(keyCode));
+    bool isKeyDown_ = (isKeyDown == JNI_TRUE) ? true : false;
+    for (auto callback : g_keyEventCallbacks) {
+        if (callback) consumed |= callback(static_cast<int>(keyCode), static_cast<unsigned int>(unicodeChar), isKeyDown_);
     }
     return consumed ? JNI_TRUE : JNI_FALSE;
 }
