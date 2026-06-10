@@ -6,10 +6,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <dlfcn.h>
-#include <fstream>
 #include <mutex>
 #include <shared_mutex>
-#include <sstream>
 #include <string>
 #include <sys/stat.h>
 #include <unordered_map>
@@ -84,8 +82,8 @@ namespace pl::signature {
     }
 
 
-    static bool isReadableMapping(const std::string &perms) {
-        return !perms.empty() && perms[0] == 'r';
+    static bool isReadableMapping(const char *perms) {
+        return perms && perms[0] == 'r';
     }
 
     static void addReadableRegion(ModuleInfo &module, uintptr_t start, uintptr_t end) {
@@ -101,27 +99,24 @@ namespace pl::signature {
     }
 
     static bool getModuleInfo(const std::string &name, ModuleInfo &out) {
-        std::ifstream maps("/proc/self/maps");
-        if (!maps.is_open()) return false;
+        FILE *maps = std::fopen("/proc/self/maps", "r");
+        if (!maps) return false;
 
-        std::string line;
-        while (std::getline(maps, line)) {
-            if (line.find(name) == std::string::npos) continue;
-
-            std::istringstream iss(line);
-            std::string addr, perms, offset, dev, inode, path;
-            iss >> addr >> perms >> offset >> dev >> inode;
-            std::getline(iss, path);
+        char line[4096];
+        while (std::fgets(line, sizeof(line), maps)) {
+            if (std::strstr(line, name.c_str()) == nullptr) continue;
 
             uintptr_t start = 0, end = 0;
-            if (std::sscanf(addr.c_str(), "%" SCNxPTR "-%" SCNxPTR,
-                            &start, &end) != 2) continue;
+            char perms[5] = {};
+            if (std::sscanf(line, "%" SCNxPTR "-%" SCNxPTR " %4s",
+                            &start, &end, perms) != 3) continue;
             if (end <= start) continue;
 
             if (!isReadableMapping(perms)) continue;
 
             addReadableRegion(out, start, end);
         }
+        std::fclose(maps);
 
         if (out.regions.empty()) return false;
 

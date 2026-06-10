@@ -2,9 +2,9 @@
 
 #include <algorithm>
 #include <android/log.h>
+#include <cstdio>
 #include <cstdint>
 #include <dlfcn.h>
-#include <fstream>
 #include <mutex>
 #include <optional>
 #include <unordered_set>
@@ -97,6 +97,31 @@ std::string GetOptionalString(const nlohmann::json &object, const char *key) {
   return object[key].get<std::string>();
 }
 
+std::optional<std::string> ReadTextFile(const std::filesystem::path &path) {
+  FILE *file = std::fopen(path.string().c_str(), "rb");
+  if (!file)
+    return std::nullopt;
+
+  std::string content;
+  char buffer[4096];
+  while (true) {
+    const size_t bytesRead = std::fread(buffer, 1, sizeof(buffer), file);
+    if (bytesRead > 0)
+      content.append(buffer, bytesRead);
+
+    if (bytesRead < sizeof(buffer)) {
+      if (std::ferror(file)) {
+        std::fclose(file);
+        return std::nullopt;
+      }
+      break;
+    }
+  }
+
+  std::fclose(file);
+  return content;
+}
+
 std::optional<ParsedModDirectory>
 ParseModDirectory(const std::filesystem::path &modDirectory) {
   namespace fs = std::filesystem;
@@ -105,13 +130,13 @@ ParseModDirectory(const std::filesystem::path &modDirectory) {
   if (!fs::exists(manifestPath) || !fs::is_regular_file(manifestPath))
     return std::nullopt;
 
-  std::ifstream manifestFile(manifestPath);
-  if (!manifestFile)
+  const auto manifestContent = ReadTextFile(manifestPath);
+  if (!manifestContent.has_value())
     return std::nullopt;
 
   nlohmann::json manifestJson;
   try {
-    manifestFile >> manifestJson;
+    manifestJson = nlohmann::json::parse(*manifestContent);
   } catch (const std::exception &ex) {
     logger.warn("Failed to parse manifest {}: {}", manifestPath.string(),
                 ex.what());

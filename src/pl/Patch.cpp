@@ -1,7 +1,8 @@
 #include "Patch.h"
+#include <cctype>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
-#include <sstream>
 #include <sys/mman.h>
 #include <unistd.h>
 
@@ -34,12 +35,26 @@ namespace pl::patch {
 
     static std::vector<uint8_t> parseBytesString(const std::string &s) {
         std::vector<uint8_t> result;
-        std::istringstream iss(s);
-        std::string token;
-        while (iss >> token) {
-            unsigned int byte;
-            if (sscanf(token.c_str(), "%x", &byte) == 1 && byte <= 0xFF)
+        result.reserve((s.size() + 2) / 3);
+
+        const char *cursor = s.c_str();
+        while (*cursor) {
+            while (*cursor &&
+                   std::isspace(static_cast<unsigned char>(*cursor))) {
+                ++cursor;
+            }
+            if (!*cursor) break;
+
+            char *parsedEnd = nullptr;
+            const unsigned long byte = std::strtoul(cursor, &parsedEnd, 16);
+            if (parsedEnd != cursor && byte <= 0xFF) {
                 result.push_back(static_cast<uint8_t>(byte));
+            }
+
+            while (*cursor &&
+                   !std::isspace(static_cast<unsigned char>(*cursor))) {
+                ++cursor;
+            }
         }
         return result;
     }
