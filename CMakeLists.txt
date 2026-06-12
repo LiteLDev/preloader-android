@@ -5,8 +5,17 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-file(GLOB_RECURSE PRELOADER_SRC "src/**/*.cpp")
-add_library(preloader SHARED ${PRELOADER_SRC})
+set(PRELOADER_SOURCES
+        src/pl/PreLoader.cpp
+        src/pl/internal/ModManager.cpp
+        src/pl/memory/Hook.cpp
+        src/pl/memory/Patch.cpp
+        src/pl/memory/Signature.cpp
+        src/pl/runtime/InputBridge.cpp
+        src/pl/runtime/JavaRuntime.cpp
+)
+
+add_library(preloader SHARED ${PRELOADER_SOURCES})
 
 target_include_directories(preloader PUBLIC src)
 target_compile_definitions(preloader PRIVATE PRELOADER_EXPORT UNICODE)
@@ -58,6 +67,23 @@ install(FILES
         src/pl/PreloaderInput.h
         src/pl/Signature.h
         DESTINATION include/pl)
+
+install(FILES
+        src/pl/c/Hook.h
+        src/pl/c/Macro.h
+        src/pl/c/Mod.h
+        src/pl/c/PreloaderInput.h
+        src/pl/c/Signature.h
+        src/pl/c/Types.h
+        DESTINATION include/pl/c)
+
+install(FILES
+        src/pl/cpp/Hook.hpp
+        src/pl/cpp/Mod.hpp
+        src/pl/cpp/PreloaderInput.hpp
+        src/pl/cpp/Signature.hpp
+        src/pl/cpp/Types.hpp
+        DESTINATION include/pl/cpp)
 
 install(FILES
         src/pl/api/Macro.h

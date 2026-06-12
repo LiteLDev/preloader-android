@@ -1,4 +1,4 @@
-#include "Signature.h"
+#include "pl/cpp/Signature.hpp"
 
 #include <algorithm>
 #include <array>
@@ -15,7 +15,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "Logger.h"
+#include "pl/Logger.h"
 
 namespace pl::signature {
 namespace {
@@ -687,13 +687,23 @@ resolveSignatures(const std::vector<std::string> &signatures,
   return results;
 }
 
-uintptr_t pl_resolve_signature(const char *signature, const char *moduleName) {
+uintptr_t resolveSignature(const std::string &signature,
+                           const std::string &moduleName) {
+  return ::pl_resolve_signature(signature.c_str(), moduleName.c_str());
+}
+
+} // namespace pl::signature
+
+extern "C" {
+
+PLAPI uintptr_t pl_resolve_signature(const char *signature,
+                                     const char *moduleName) {
   if (!signature || !moduleName) {
     return 0;
   }
 
-  const auto results =
-      resolveSignatures(std::vector<std::string>{signature}, moduleName);
+  const auto results = pl::signature::resolveSignatures(
+      std::vector<std::string>{signature}, moduleName);
   if (const auto it = results.find(signature); it != results.end()) {
     return it->second;
   }
@@ -701,9 +711,4 @@ uintptr_t pl_resolve_signature(const char *signature, const char *moduleName) {
   return 0;
 }
 
-uintptr_t resolveSignature(const std::string &signature,
-                           const std::string &moduleName) {
-  return pl_resolve_signature(signature.c_str(), moduleName.c_str());
-}
-
-} // namespace pl::signature
+} // extern "C"
