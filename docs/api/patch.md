@@ -1,16 +1,16 @@
 # Patch API
 
-## 作用
+## Purpose
 
-Patch API 用于读取、写入和回滚进程内存。它是 C++ API，适合对已知地址写入指令或数据。
+Patch API reads, writes, and reverts process memory. It is a C++ API designed for known addresses.
 
-## 头文件
+## Header
 
 ```cpp
 #include <pl/Patch.h>
 ```
 
-## 类型签名
+## Signatures
 
 ```cpp
 struct patchInfo {
@@ -31,24 +31,24 @@ void revertAll();
 
 ## writeBytes
 
-### 作用
+### Purpose
 
-把字节写入指定地址，并用 `name` 保存原始字节，方便后续回滚。
+Writes bytes to an address and stores original bytes under `name`.
 
-### 参数
+### Parameters
 
-| 参数 | 说明 |
+| Parameter | Description |
 | --- | --- |
-| `addr` | 要写入的地址 |
-| `bytes_str` | 十六进制字节字符串，例如 `"00 00 80 D2"` |
-| `bytes` | 要写入的字节数组 |
-| `name` | patch 名称，用于回滚 |
+| `addr` | Target address |
+| `bytes_str` | Hex byte string, such as `"00 00 80 D2"` |
+| `bytes` | Byte vector |
+| `name` | Patch name for later revert |
 
-### 返回值
+### Return Value
 
-返回 `true` 表示写入成功，返回 `false` 表示字节为空或内存权限修改失败。
+Returns `true` on success. Returns `false` when bytes are empty or memory permission changes fail.
 
-### 示例
+### Example
 
 ```cpp
 #include <pl/Patch.h>
@@ -59,50 +59,40 @@ bool ok = pl::patch::writeBytes(address, "00 00 80 D2 C0 03 5F D6",
 
 ## readBytes
 
-### 作用
+### Purpose
 
-读取指定地址的字节。
+Reads bytes from an address.
 
-### 参数
+### Parameters
 
-| 参数 | 说明 |
+| Parameter | Description |
 | --- | --- |
-| `addr` | 起始地址 |
-| `len` | 读取长度 |
+| `addr` | Start address |
+| `len` | Number of bytes |
 
-### 返回值
+### Return Value
 
-返回读取到的字节数组。
+Returns the read bytes.
 
 ## revert
 
-### 作用
+### Purpose
 
-按名称回滚单个 patch。
+Reverts one named patch.
 
-### 参数
+### Return Value
 
-| 参数 | 说明 |
-| --- | --- |
-| `name` | `writeBytes` 时使用的 patch 名称 |
-
-### 返回值
-
-返回 `true` 表示回滚成功，返回 `false` 表示名称不存在或内存权限修改失败。
+Returns `true` on success, otherwise `false`.
 
 ## revertAll
 
-### 作用
+### Purpose
 
-回滚当前记录的全部 patch。
+Reverts all recorded patches.
 
-### 参数与返回值
+## Notes
 
-无参数，无返回值。
-
-## 注意事项
-
-- 同名 patch 会覆盖旧记录；需要多个独立 patch 时使用不同名称。
-- 写入前会保存原始字节，保存长度等于本次写入长度。
-- patch 地址和字节必须匹配目标 ABI 指令集，错误写入会导致崩溃。
+- Reusing a patch name overwrites the previous record.
+- Saved original byte length equals the write length.
+- Wrong addresses or instruction bytes can crash the process.
 

@@ -1,10 +1,10 @@
-# Mod 入口 API
+# Mod Entry API
 
-## 作用
+## Purpose
 
-Mod 入口 API 定义 preloader 如何把 mod 元数据和 `JavaVM` 传给 native mod。每个 native mod 必须导出 `LeviMod_Load`。
+The Mod Entry API defines how preloader passes mod metadata and `JavaVM` to a native mod. Every native mod must export `LeviMod_Load`.
 
-## 头文件
+## Headers
 
 C:
 
@@ -18,7 +18,7 @@ C++:
 #include <pl/cpp/Mod.hpp>
 ```
 
-## 类型签名
+## Signatures
 
 ```c
 typedef struct PLModInfo {
@@ -38,40 +38,40 @@ typedef struct PLModInfo {
 typedef void (*PLModLoadFunc)(JavaVM *vm, const PLModInfo *mod_info);
 ```
 
-mod 需要导出：
+The mod must export:
 
 ```c
 void LeviMod_Load(JavaVM *vm, const PLModInfo *mod_info);
 ```
 
-## 字段说明
+## Fields
 
-| 字段 | 作用 |
+| Field | Purpose |
 | --- | --- |
-| `size` | 当前结构体大小，用于兼容性判断 |
-| `mod_id` | mod 目录名 |
-| `display_name` | manifest 中的 `name`，为空时使用目录名 |
-| `author` | manifest 中的 `author` |
-| `version` | manifest 中的 `version` |
-| `entry_path` | manifest 中的入口相对路径 |
-| `entry_file_name` | 入口 `.so` 文件名 |
-| `library_path` | 实际加载的 `.so` 路径 |
-| `icon_path` | manifest 中有效的图标相对路径，可能为空 |
-| `manifest_path` | manifest 文件路径 |
-| `mod_root_path` | mod 根目录路径 |
+| `size` | Size of the current structure for compatibility checks |
+| `mod_id` | Mod directory name |
+| `display_name` | Manifest `name`; directory name is used when empty |
+| `author` | Manifest `author` |
+| `version` | Manifest `version` |
+| `entry_path` | Manifest entry relative path |
+| `entry_file_name` | Entry `.so` file name |
+| `library_path` | Actual loaded `.so` path |
+| `icon_path` | Valid icon relative path, or empty |
+| `manifest_path` | Manifest file path |
+| `mod_root_path` | Mod root directory |
 
-## 参数
+## Parameters
 
-| 参数 | 说明 |
+| Parameter | Description |
 | --- | --- |
-| `vm` | 当前进程的 `JavaVM *` |
-| `mod_info` | 当前 mod 的元数据，可能为 `NULL` 时应防御处理 |
+| `vm` | Current process `JavaVM *` |
+| `mod_info` | Current mod metadata |
 
-## 返回值
+## Return Value
 
-`LeviMod_Load` 没有返回值。加载成功与否由 preloader 的 `.so` 加载和符号解析过程决定。
+`LeviMod_Load` returns nothing.
 
-## 最小示例
+## Example
 
 ```c
 #include <pl/c/Mod.h>
@@ -87,9 +87,9 @@ void LeviMod_Load(JavaVM *vm, const PLModInfo *mod_info) {
 }
 ```
 
-## 注意事项
+## Notes
 
-- `PLModInfo` 内的字符串由 preloader 持有，只保证在 `LeviMod_Load` 调用期间可安全读取。需要长期保存时请复制字符串。
-- C++ mod 必须用 `extern "C"` 导出 `LeviMod_Load`，否则符号名会被 C++ name mangling 改掉。
-- 不要修改 `PLModInfo` 指针指向的数据。
+- Strings inside `PLModInfo` are owned by preloader and should be copied if stored.
+- C++ mods must export `LeviMod_Load` with `extern "C"`.
+- Do not mutate data pointed to by `PLModInfo`.
 

@@ -1,22 +1,22 @@
 # Input API
 
-## 作用
+## Purpose
 
-Input API 允许 mod 注册触摸和键盘事件回调，也可以请求显示或隐藏软键盘。
+Input API lets mods register touch and keyboard callbacks, and request the soft keyboard to show or hide.
 
-## 头文件
+## Headers
 
 ```c
 #include <pl/c/PreloaderInput.h>
 ```
 
-C++ 也可以使用：
+C++:
 
 ```cpp
 #include <pl/cpp/PreloaderInput.hpp>
 ```
 
-## 类型签名
+## Signatures
 
 ```c
 typedef bool (*PreloaderInput_OnTouch_Fn)(int action, int pointerId,
@@ -38,19 +38,19 @@ PLAPI PreloaderInput_Interface *GetPreloaderInput(void);
 
 ## GetPreloaderInput
 
-### 作用
+### Purpose
 
-返回输入接口表。mod 通过这个接口注册回调或控制软键盘。
+Returns the input interface table.
 
-### 参数
+### Parameters
 
-无。
+None.
 
-### 返回值
+### Return Value
 
-返回 `PreloaderInput_Interface *`。当前实现返回全局接口表。
+Returns `PreloaderInput_Interface *`.
 
-### 示例
+### Example
 
 ```c
 static bool on_touch(int action, int pointerId, float x, float y) {
@@ -72,78 +72,70 @@ void LeviMod_Load(JavaVM *vm, const PLModInfo *mod_info) {
 
 ## RegisterTouchCallback
 
-### 作用
+### Purpose
 
-注册触摸事件回调。
+Registers a touch event callback.
 
-### 参数
+### Parameters
 
-| 参数 | 说明 |
+| Parameter | Description |
 | --- | --- |
-| `callback` | 触摸事件回调函数 |
+| `callback` | Touch callback |
 
-回调参数：
+Callback parameters:
 
-| 参数 | 说明 |
+| Parameter | Description |
 | --- | --- |
 | `action` | Android `MotionEvent` action |
-| `pointerId` | 指针 ID |
-| `x` | 当前指针 X 坐标 |
-| `y` | 当前指针 Y 坐标 |
+| `pointerId` | Pointer ID |
+| `x` | Pointer X coordinate |
+| `y` | Pointer Y coordinate |
 
-### 返回值
+### Return Value
 
-注册函数无返回值。回调返回 `true` 表示消费事件，返回 `false` 表示继续传递。
+The registration function returns nothing. The callback returns `true` to consume the event.
 
 ## RegisterKeyEventCallback
 
-### 作用
+### Purpose
 
-注册键盘事件回调。
+Registers a keyboard event callback.
 
-### 参数
+### Parameters
 
-| 参数 | 说明 |
+| Parameter | Description |
 | --- | --- |
-| `callback` | 键盘事件回调函数 |
+| `callback` | Key event callback |
 
-回调参数：
+Callback parameters:
 
-| 参数 | 说明 |
+| Parameter | Description |
 | --- | --- |
 | `keyCode` | Android key code |
-| `unicodeChar` | Unicode 字符码 |
-| `isKeyDown` | `true` 表示按下，`false` 表示抬起 |
+| `unicodeChar` | Unicode character code |
+| `isKeyDown` | `true` for key down, `false` for key up |
 
-### 返回值
+### Return Value
 
-注册函数无返回值。回调返回 `true` 表示消费事件。
+The registration function returns nothing. The callback returns `true` to consume the event.
 
 ## ShowKeyboard / HideKeyboard
 
-### 作用
+### Purpose
 
-调用当前 Activity 的 `showSoftKeyboard` 或 `hideSoftKeyboard` 方法。
+Calls the current Activity's `showSoftKeyboard` or `hideSoftKeyboard` method.
 
-### 参数
+### Parameters
 
-无。
+None.
 
-### 返回值
+### Return Value
 
-无。
+None.
 
-### 示例
+## Notes
 
-```c
-PreloaderInput_Interface *input = GetPreloaderInput();
-input->ShowKeyboard();
-input->HideKeyboard();
-```
-
-## 注意事项
-
-- 回调列表当前没有注销接口，避免重复注册同一个回调。
-- 回调执行时会持有内部 mutex，不要在回调里做长时间阻塞操作。
-- 软键盘依赖 Java 层已设置当前 Activity；Activity 不存在时调用会被忽略。
+- There is currently no unregister API. Avoid registering the same callback repeatedly.
+- Internal mutex is held while callbacks run. Do not block for long periods.
+- Soft keyboard calls are ignored when no Activity is available.
 

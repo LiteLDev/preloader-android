@@ -1,10 +1,10 @@
 # Hook API
 
-## 作用
+## Purpose
 
-Hook API 用于把目标函数替换为 detour 函数，并保存原函数入口。它支持多个 detour 按优先级组成链。
+Hook API replaces a target function with a detour function and stores the original or next function pointer. Multiple detours on the same target are chained by priority.
 
-## 头文件
+## Headers
 
 C:
 
@@ -18,13 +18,13 @@ C++:
 #include <pl/cpp/Hook.hpp>
 ```
 
-旧路径也可用：
+Legacy:
 
 ```cpp
 #include <pl/Hook.h>
 ```
 
-## 类型签名
+## Signatures
 
 ```c
 typedef void *PLFuncPtr;
@@ -45,7 +45,7 @@ PLAPI int pl_hook(PLFuncPtr target, PLFuncPtr detour,
 PLAPI bool pl_unhook(PLFuncPtr target, PLFuncPtr detour);
 ```
 
-C++ 包装：
+C++ wrappers:
 
 ```cpp
 namespace pl::hook {
@@ -70,27 +70,27 @@ bool unhook(FuncPtr target, FuncPtr detour);
 
 ## pl_hook
 
-### 作用
+### Purpose
 
-安装 hook。第一次 hook 某个目标函数时会安装底层 hook；之后对同一目标添加 hook 时会重建 detour 链。
+Installs a hook. Adding another hook to the same target rebuilds the detour chain.
 
-### 参数
+### Parameters
 
-| 参数 | 说明 |
+| Parameter | Description |
 | --- | --- |
-| `target` | 目标函数地址，不能为 `NULL` |
-| `detour` | 替换函数地址，不能为 `NULL` |
-| `originalFunc` | 用于接收原函数或链中下一个函数的指针地址，不能为 `NULL` |
-| `priority` | hook 优先级，数值越小越靠前 |
+| `target` | Target function address; must not be `NULL` |
+| `detour` | Replacement function address; must not be `NULL` |
+| `originalFunc` | Receives the original or next function pointer; must not be `NULL` |
+| `priority` | Hook priority; lower values run earlier |
 
-### 返回值
+### Return Value
 
-| 返回值 | 说明 |
+| Value | Description |
 | --- | --- |
-| `0` | 成功 |
-| `-1` | 参数无效或底层 hook 安装失败 |
+| `0` | Success |
+| `-1` | Invalid argument or installation failure |
 
-### 示例
+### Example
 
 ```cpp
 #include <pl/cpp/Hook.hpp>
@@ -99,9 +99,7 @@ using UpdateFn = void (*)(void *);
 static UpdateFn old_update = nullptr;
 
 static void my_update(void *self) {
-  // before
   old_update(self);
-  // after
 }
 
 void install(void *target) {
@@ -114,32 +112,30 @@ void install(void *target) {
 
 ## pl_unhook
 
-### 作用
+### Purpose
 
-从指定目标函数上移除指定 detour。
+Removes one detour from a target function.
 
-### 参数
+### Parameters
 
-| 参数 | 说明 |
+| Parameter | Description |
 | --- | --- |
-| `target` | 目标函数地址 |
-| `detour` | 要移除的 detour 函数地址 |
+| `target` | Target function address |
+| `detour` | Detour function address to remove |
 
-### 返回值
+### Return Value
 
-返回 `true` 表示移除成功，返回 `false` 表示未找到对应 hook。
+Returns `true` when removed, otherwise `false`.
 
-## 链式 hook 行为
+## Chain Behavior
 
-多个 detour hook 同一个 `target` 时，preloader 按 `priority` 和注册顺序重建链：
+- Lower priority values run earlier.
+- Same priority keeps registration order.
+- `originalFunc` points to the next function in the chain; the last one points to the real original.
 
-- priority 数字越小越先执行。
-- 同优先级下，先注册的 detour 更靠前。
-- `originalFunc` 会指向链中下一个函数；链尾指向真正原函数。
+## Common Mistakes
 
-## 常见错误
-
-- `originalFunc` 传 `NULL`：当前实现会返回 `-1`。
-- detour 签名和目标函数不一致：会导致崩溃。
-- detour 内直接调用目标函数地址：会递归进入 detour，应该调用 `originalFunc`。
-- 在构造函数中过早 hook：必要时先确保目标库已加载，或先解析 signature。
+- Passing `NULL` as `originalFunc`: `pl_hook` returns `-1`.
+- Detour signature does not match target ABI.
+- Calling the target address directly inside detour, causing recursion.
+- Installing too early before the target library is loaded.

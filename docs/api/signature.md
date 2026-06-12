@@ -1,10 +1,10 @@
 # Signature API
 
-## 作用
+## Purpose
 
-Signature API 用于在已加载模块中解析符号名或字节特征码，返回匹配地址。
+Signature API resolves a symbol name or byte pattern inside a loaded module and returns the matched address.
 
-## 头文件
+## Headers
 
 C:
 
@@ -18,14 +18,14 @@ C++:
 #include <pl/cpp/Signature.hpp>
 ```
 
-## 类型签名
+## Signatures
 
 ```c
 PLAPI uintptr_t pl_resolve_signature(const char *signature,
                                      const char *moduleName);
 ```
 
-C++：
+C++:
 
 ```cpp
 namespace pl::signature {
@@ -41,40 +41,38 @@ resolveSignatures(const std::vector<std::string> &signatures,
 
 ## pl_resolve_signature
 
-### 作用
+### Purpose
 
-优先按符号名解析；如果符号不存在，则把 `signature` 当作字节 pattern 扫描模块可读内存区域。
+First tries to resolve `signature` as a symbol name. If not found, treats it as a byte pattern.
 
-### 参数
+### Parameters
 
-| 参数 | 说明 |
+| Parameter | Description |
 | --- | --- |
-| `signature` | 符号名或字节 pattern，不能为 `NULL` |
-| `moduleName` | 模块名或路径片段，不能为 `NULL` |
+| `signature` | Symbol name or byte pattern; must not be `NULL` |
+| `moduleName` | Module name or path fragment; must not be `NULL` |
 
-### 返回值
+### Return Value
 
-返回匹配地址。失败返回 `0`。
+Matched address. Returns `0` on failure.
 
-## Pattern 格式
-
-支持空格分隔或连续十六进制字节：
+## Pattern Format
 
 ```text
 48 8B ?? ?? 89
 488B????89
 ```
 
-通配符：
+Wildcards:
 
-| 写法 | 说明 |
+| Pattern | Description |
 | --- | --- |
-| `?` | 整字节通配 |
-| `??` | 整字节通配 |
-| `A?` | 低 4 bit 通配 |
-| `?F` | 高 4 bit 通配 |
+| `?` | Whole byte wildcard |
+| `??` | Whole byte wildcard |
+| `A?` | Low nibble wildcard |
+| `?F` | High nibble wildcard |
 
-## C 示例
+## C Example
 
 ```c
 #include <pl/c/Signature.h>
@@ -85,7 +83,7 @@ if (addr == 0) {
 }
 ```
 
-## C++ 批量示例
+## C++ Batch Example
 
 ```cpp
 #include <pl/cpp/Signature.hpp>
@@ -97,10 +95,10 @@ auto results = pl::signature::resolveSignatures(
 uintptr_t symbolA = results["SymbolA"];
 ```
 
-## 注意事项
+## Notes
 
-- `moduleName` 必须能匹配 `/proc/self/maps` 中的模块路径。
-- pattern 为空或格式非法时返回 `0`。
-- 结果会缓存；模块重新加载或内存布局变化时不要假设旧地址仍有效。
-- 批量解析多个 signature 时优先使用 `resolveSignatures`，避免重复扫描。
+- `moduleName` must match a module path in `/proc/self/maps`.
+- Empty or invalid patterns return `0`.
+- Results are cached; do not assume cached addresses survive module reloads.
+- Prefer `resolveSignatures` when resolving multiple patterns.
 

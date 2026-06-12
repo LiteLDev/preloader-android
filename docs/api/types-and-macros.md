@@ -1,10 +1,10 @@
-# Types 与宏
+# Types and Macros
 
-## 作用
+## Purpose
 
-类型和宏头定义导出符号、C ABI 声明方式和基础类型别名。
+Type and macro headers define exported symbol visibility, C ABI declarations, and base type aliases.
 
-## 头文件
+## Headers
 
 C:
 
@@ -19,58 +19,40 @@ C++:
 #include <pl/cpp/Types.hpp>
 ```
 
-旧路径：
+Legacy:
 
 ```cpp
 #include <pl/api/Macro.h>
 #include <pl/api/Types.h>
 ```
 
-## 宏
-
-### VA_EXPAND
+## VA_EXPAND
 
 ```c
 #define VA_EXPAND(...) __VA_ARGS__
 ```
 
-用于展开可变参数宏。hook 宏内部会使用它。
+Expands variadic macro arguments. Hook macros use it internally.
 
-### PLAPI
+## PLAPI
 
-```c
-#ifdef PRELOADER_EXPORT
-#define PLAPI __attribute__((visibility("default")))
-#else
-#define PLAPI
-#endif
-```
-
-作用：标记需要默认可见性的导出符号。
-
-使用场景：
+Marks exported symbols with default visibility when building preloader.
 
 ```c
 PLAPI void MyExportedFunction(void);
 ```
 
-### PLCAPI
+## PLCAPI
+
+Declares C ABI exported functions.
 
 ```c
-#ifdef __cplusplus
-#define PLCAPI extern "C" PLAPI
-#else
-#define PLCAPI extern PLAPI
-#endif
+PLCAPI void MyCFunction(void);
 ```
 
-作用：声明 C ABI 导出函数。C++ 代码中可避免 name mangling。
+## Base Type Aliases
 
-## 基础类型
-
-`pl/c/Types.h` 提供以下别名：
-
-| 类型 | 等价类型 |
+| Alias | Equivalent type |
 | --- | --- |
 | `ushort` | `unsigned short` |
 | `uint` | `unsigned int` |
@@ -90,9 +72,9 @@ PLAPI void MyExportedFunction(void);
 | `uint16` | `unsigned short` |
 | `uint8` | `unsigned char` |
 
-## 注意事项
+## Notes
 
-- C ABI 头只使用 C 可用类型，不暴露 STL。
-- 新代码优先使用 `pl/c/*` 或 `pl/cpp/*`。
-- 旧 `pl/api/*` 路径保留用于兼容已有 mod。
+- C ABI headers do not expose STL types.
+- Prefer `pl/c/*` or `pl/cpp/*` in new code.
+- Legacy `pl/api/*` paths remain for compatibility.
 
