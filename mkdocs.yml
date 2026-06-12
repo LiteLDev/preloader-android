@@ -1,0 +1,39 @@
+site_name: Preloader Android
+site_description: Preloader Android mod API documentation
+repo_url: https://github.com/LiteLDev/preloader-android
+docs_dir: docs
+
+theme:
+  name: material
+  language: zh
+  features:
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+  - tables
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+
+nav:
+  - 首页: index.md
+  - 快速开始: getting-started.md
+  - API Reference:
+      - Mod 入口: api/mod.md
+      - Input API: api/input.md
+      - Hook API: api/hook.md
+      - Signature API: api/signature.md
+      - Patch API: api/patch.md
+      - Memory Hook 宏: api/memory-hook-macros.md
+      - Types 与宏: api/types-and-macros.md
+      - GlossHook 门面: api/gloss.md
+  - 构建: build.md
+  - 兼容性: compatibility.md
+
