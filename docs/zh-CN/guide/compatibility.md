@@ -38,12 +38,13 @@
 | C ABI | `pl/c/*.h` |
 | C++ 封装 | `pl/cpp/*.hpp` |
 | Hook 宏 | `pl/api/memory/Hook.h` |
-| Patch API | `pl/Patch.h` |
+| Patch API | `pl/cpp/Patch.hpp` |
 
 兼容旧路径：
 
 - `pl/Hook.h`
 - `pl/Mod.h`
+- `pl/Patch.h`
 - `pl/PreloaderInput.h`
 - `pl/Signature.h`
 - `pl/api/Macro.h`
@@ -53,6 +54,6 @@
 
 - C mod 从 `pl/Mod.h` 迁移到 `pl/c/Mod.h`。
 - C++ mod 从 `pl/Hook.h` 迁移到 `pl/cpp/Hook.hpp`。
+- C++ mod 从 `pl/Patch.h` 迁移到 `pl/cpp/Patch.hpp`。
 - 不要在 C 代码中 include `pl/cpp/*.hpp`。
 - 不要依赖内部目录 `pl/runtime`、`pl/internal`、`pl/memory` 的实现细节。
-

@@ -80,6 +80,7 @@ install(FILES
 install(FILES
         src/pl/cpp/Hook.hpp
         src/pl/cpp/Mod.hpp
+        src/pl/cpp/Patch.hpp
         src/pl/cpp/PreloaderInput.hpp
         src/pl/cpp/Signature.hpp
         src/pl/cpp/Types.hpp

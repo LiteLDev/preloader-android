@@ -1,8 +1,11 @@
 #include "pl/Patch.h"
+#include <algorithm>
 #include <cctype>
+#include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <sys/mman.h>
 #include <unistd.h>
 
@@ -19,10 +22,62 @@ namespace pl::patch {
         return addr & ~(ps - 1);
     }
 
+    static bool checkedAddressRange(uintptr_t address, size_t length,
+                                    uintptr_t &end) {
+        if (address == 0 || length == 0)
+            return false;
+        if (length > std::numeric_limits<uintptr_t>::max() - address)
+            return false;
+        end = address + length;
+        return true;
+    }
+
+    static bool hasReadableMappedRange(uintptr_t address, size_t length) {
+        uintptr_t end = 0;
+        if (!checkedAddressRange(address, length, end))
+            return false;
+
+        FILE *maps = std::fopen("/proc/self/maps", "r");
+        if (!maps)
+            return false;
+
+        uintptr_t covered = address;
+        char line[4096];
+        while (std::fgets(line, sizeof(line), maps)) {
+            uintptr_t start = 0;
+            uintptr_t regionEnd = 0;
+            char perms[5] = {};
+            if (std::sscanf(line, "%" SCNxPTR "-%" SCNxPTR " %4s", &start,
+                            &regionEnd, perms) != 3) {
+                continue;
+            }
+
+            if (regionEnd <= covered || start > covered)
+                continue;
+            if (perms[0] != 'r')
+                break;
+
+            covered = std::min(regionEnd, end);
+            if (covered == end) {
+                std::fclose(maps);
+                return true;
+            }
+        }
+
+        std::fclose(maps);
+        return false;
+    }
+
     static bool setMemRWX(uintptr_t address, size_t length) {
+        uintptr_t end = 0;
+        if (!checkedAddressRange(address, length, end))
+            return false;
         uintptr_t page_start = getPageStart(address);
         size_t page_size = getPageSize();
-        size_t page_count = ((address + length - page_start) + page_size - 1) / page_size;
+        size_t span = end - page_start;
+        if (span > std::numeric_limits<size_t>::max() - (page_size - 1))
+            return false;
+        size_t page_count = (span + page_size - 1) / page_size;
         int ret = mprotect(reinterpret_cast<void *>(page_start),
                            page_count * page_size,
                            PROT_READ | PROT_WRITE | PROT_EXEC);
@@ -60,9 +115,11 @@ namespace pl::patch {
     }
 
     bool writeBytes(uintptr_t addr, const std::vector<uint8_t> &bytes, const std::string &name) {
-        if (bytes.empty())
+        if (bytes.empty() || !hasReadableMappedRange(addr, bytes.size()))
             return false;
         std::vector<uint8_t> original = readBytes(addr, bytes.size());
+        if (original.size() != bytes.size())
+            return false;
         if (!setMemRWX(addr, bytes.size()))
             return false;
         std::memcpy(reinterpret_cast<void *>(addr), bytes.data(), bytes.size());
@@ -78,6 +135,8 @@ namespace pl::patch {
     }
 
     std::vector<uint8_t> readBytes(uintptr_t addr, size_t len) {
+        if (!hasReadableMappedRange(addr, len))
+            return {};
         std::vector<uint8_t> out(len);
         std::memcpy(out.data(), reinterpret_cast<void *>(addr), len);
         return out;
@@ -89,6 +148,8 @@ namespace pl::patch {
             return false;
 
         const patchInfo &p = it->second;
+        if (p.bytes.empty() || !hasReadableMappedRange(p.address, p.bytes.size()))
+            return false;
         if (!setMemRWX(p.address, p.bytes.size()))
             return false;
 
@@ -102,7 +163,9 @@ namespace pl::patch {
     void revertAll() {
         for (auto &kv : patches) {
             const patchInfo &p = kv.second;
-            if (setMemRWX(p.address, p.bytes.size())) {
+            if (!p.bytes.empty() &&
+                hasReadableMappedRange(p.address, p.bytes.size()) &&
+                setMemRWX(p.address, p.bytes.size())) {
                 std::memcpy(reinterpret_cast<void *>(p.address), p.bytes.data(), p.bytes.size());
                 __builtin___clear_cache(reinterpret_cast<char *>(getPageStart(p.address)),
                                         reinterpret_cast<char *>(p.address + p.bytes.size()));

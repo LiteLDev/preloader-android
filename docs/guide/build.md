@@ -30,6 +30,7 @@ C++:
 ```cpp
 #include <pl/cpp/Mod.hpp>
 #include <pl/cpp/Hook.hpp>
+#include <pl/cpp/Patch.hpp>
 #include <pl/cpp/Signature.hpp>
 ```
 
@@ -38,6 +39,7 @@ Legacy:
 ```cpp
 #include <pl/Mod.h>
 #include <pl/Hook.h>
+#include <pl/Patch.h>
 #include <pl/Signature.h>
 ```
 

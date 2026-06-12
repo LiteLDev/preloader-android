@@ -36,12 +36,13 @@ Recommended paths:
 | C ABI | `pl/c/*.h` |
 | C++ wrappers | `pl/cpp/*.hpp` |
 | Hook macros | `pl/api/memory/Hook.h` |
-| Patch API | `pl/Patch.h` |
+| Patch API | `pl/cpp/Patch.hpp` |
 
 Legacy wrappers:
 
 - `pl/Hook.h`
 - `pl/Mod.h`
+- `pl/Patch.h`
 - `pl/PreloaderInput.h`
 - `pl/Signature.h`
 - `pl/api/Macro.h`
@@ -51,6 +52,6 @@ Legacy wrappers:
 
 - C mods should migrate from `pl/Mod.h` to `pl/c/Mod.h`.
 - C++ mods should migrate from `pl/Hook.h` to `pl/cpp/Hook.hpp`.
+- C++ mods should migrate from `pl/Patch.h` to `pl/cpp/Patch.hpp`.
 - Do not include `pl/cpp/*.hpp` from C code.
 - Do not depend on internal directories such as `pl/runtime`, `pl/internal`, or `pl/memory`.
-

@@ -6,6 +6,14 @@ Patch API reads, writes, and reverts process memory. It is a C++ API designed fo
 
 ## Header
 
+Recommended:
+
+```cpp
+#include <pl/cpp/Patch.hpp>
+```
+
+Legacy compatibility wrapper:
+
 ```cpp
 #include <pl/Patch.h>
 ```
@@ -46,12 +54,12 @@ Writes bytes to an address and stores original bytes under `name`.
 
 ### Return Value
 
-Returns `true` on success. Returns `false` when bytes are empty or memory permission changes fail.
+Returns `true` on success. Returns `false` when bytes are empty, `addr` is `0`, the target range is not readable, the address range overflows, or memory permission changes fail.
 
 ### Example
 
 ```cpp
-#include <pl/Patch.h>
+#include <pl/cpp/Patch.hpp>
 
 bool ok = pl::patch::writeBytes(address, "00 00 80 D2 C0 03 5F D6",
                                 "return_zero");
@@ -72,7 +80,7 @@ Reads bytes from an address.
 
 ### Return Value
 
-Returns the read bytes.
+Returns the read bytes. Returns an empty vector when `addr` is `0`, `len` is `0`, the address range overflows, or the target range is not readable.
 
 ## revert
 
@@ -94,5 +102,5 @@ Reverts all recorded patches.
 
 - Reusing a patch name overwrites the previous record.
 - Saved original byte length equals the write length.
-- Wrong addresses or instruction bytes can crash the process.
-
+- `writeBytes` and `readBytes` reject null or unmapped addresses before copying memory. They cannot prove the address is semantically safe; wrong instruction bytes or patching the wrong function can still crash the process.
+- `pl/Patch.h` remains available for source compatibility, but new C++ mods should include `pl/cpp/Patch.hpp`.

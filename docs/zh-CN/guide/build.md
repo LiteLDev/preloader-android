@@ -34,6 +34,7 @@ C++ mod 推荐：
 ```cpp
 #include <pl/cpp/Mod.hpp>
 #include <pl/cpp/Hook.hpp>
+#include <pl/cpp/Patch.hpp>
 #include <pl/cpp/Signature.hpp>
 ```
 
@@ -42,6 +43,7 @@ C++ mod 推荐：
 ```cpp
 #include <pl/Mod.h>
 #include <pl/Hook.h>
+#include <pl/Patch.h>
 #include <pl/Signature.h>
 ```
 
