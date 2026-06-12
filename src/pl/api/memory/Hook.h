@@ -1,7 +1,7 @@
 #pragma once
 
-#include "pl/Hook.h"
-#include "pl/Signature.h"
+#include "pl/cpp/Hook.hpp"
+#include "pl/c/Signature.h"
 #include "pl/api/Macro.h"
 #include "pl/api/memory/Memory.h"
 
@@ -41,7 +41,7 @@ enum class HookPriority : int {
 inline FuncPtr resolveIdentifier(char const *identifier,
                                  char const *moduleName) {
   return reinterpret_cast<FuncPtr>(
-      pl::signature::pl_resolve_signature(identifier, moduleName));
+      ::pl_resolve_signature(identifier, moduleName));
 }
 
 inline FuncPtr resolveIdentifier(

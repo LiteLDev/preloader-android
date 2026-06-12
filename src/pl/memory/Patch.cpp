@@ -1,4 +1,5 @@
-#include "pl/Patch.h"
+#include "pl/c/Patch.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cinttypes>
@@ -6,11 +7,21 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <string>
 #include <sys/mman.h>
+#include <unordered_map>
 #include <unistd.h>
+#include <vector>
 
-namespace pl::patch {
-    std::unordered_map<std::string, patchInfo> patches;
+namespace {
+    struct PatchInfo {
+        uintptr_t address;
+        std::vector<uint8_t> bytes;
+    };
+
+    std::unordered_map<std::string, PatchInfo> patches;
+
+    std::vector<uint8_t> readBytesImpl(uintptr_t addr, size_t len);
 
     static size_t getPageSize() {
         static size_t sz = sysconf(_SC_PAGESIZE);
@@ -88,8 +99,18 @@ namespace pl::patch {
         return true;
     }
 
-    static std::vector<uint8_t> parseBytesString(const std::string &s) {
-        std::vector<uint8_t> result;
+    static int hexValue(unsigned char ch) {
+        if (ch >= '0' && ch <= '9')
+            return ch - '0';
+        if (ch >= 'a' && ch <= 'f')
+            return ch - 'a' + 10;
+        if (ch >= 'A' && ch <= 'F')
+            return ch - 'A' + 10;
+        return -1;
+    }
+
+    static bool parseBytesString(const std::string &s, std::vector<uint8_t> &result) {
+        result.clear();
         result.reserve((s.size() + 2) / 3);
 
         const char *cursor = s.c_str();
@@ -100,24 +121,34 @@ namespace pl::patch {
             }
             if (!*cursor) break;
 
-            char *parsedEnd = nullptr;
-            const unsigned long byte = std::strtoul(cursor, &parsedEnd, 16);
-            if (parsedEnd != cursor && byte <= 0xFF) {
-                result.push_back(static_cast<uint8_t>(byte));
-            }
-
+            unsigned int byte = 0;
+            int digits = 0;
             while (*cursor &&
                    !std::isspace(static_cast<unsigned char>(*cursor))) {
+                if (digits == 2)
+                    return false;
+
+                const int nibble =
+                    hexValue(static_cast<unsigned char>(*cursor));
+                if (nibble < 0)
+                    return false;
+                byte = (byte << 4) | static_cast<unsigned int>(nibble);
+                ++digits;
                 ++cursor;
             }
+
+            if (digits == 0)
+                return false;
+            result.push_back(static_cast<uint8_t>(byte));
         }
-        return result;
+
+        return !result.empty();
     }
 
-    bool writeBytes(uintptr_t addr, const std::vector<uint8_t> &bytes, const std::string &name) {
+    bool writeBytesImpl(uintptr_t addr, const std::vector<uint8_t> &bytes, const std::string &name) {
         if (bytes.empty() || !hasReadableMappedRange(addr, bytes.size()))
             return false;
-        std::vector<uint8_t> original = readBytes(addr, bytes.size());
+        std::vector<uint8_t> original = readBytesImpl(addr, bytes.size());
         if (original.size() != bytes.size())
             return false;
         if (!setMemRWX(addr, bytes.size()))
@@ -125,16 +156,18 @@ namespace pl::patch {
         std::memcpy(reinterpret_cast<void *>(addr), bytes.data(), bytes.size());
         __builtin___clear_cache(reinterpret_cast<char *>(getPageStart(addr)),
                                 reinterpret_cast<char *>(addr + bytes.size()));
-        patches[name] = patchInfo{addr, original};
+        patches[name] = PatchInfo{addr, original};
         return true;
     }
 
-    bool writeBytes(uintptr_t addr, const std::string &bytes_str, const std::string &name) {
-        std::vector<uint8_t> bytes = parseBytesString(bytes_str);
-        return writeBytes(addr, bytes, name);
+    bool writeHexImpl(uintptr_t addr, const std::string &bytes_str, const std::string &name) {
+        std::vector<uint8_t> bytes;
+        if (!parseBytesString(bytes_str, bytes))
+            return false;
+        return writeBytesImpl(addr, bytes, name);
     }
 
-    std::vector<uint8_t> readBytes(uintptr_t addr, size_t len) {
+    std::vector<uint8_t> readBytesImpl(uintptr_t addr, size_t len) {
         if (!hasReadableMappedRange(addr, len))
             return {};
         std::vector<uint8_t> out(len);
@@ -142,12 +175,12 @@ namespace pl::patch {
         return out;
     }
 
-    bool revert(const std::string &name) {
+    bool revertImpl(const std::string &name) {
         auto it = patches.find(name);
         if (it == patches.end())
             return false;
 
-        const patchInfo &p = it->second;
+        const PatchInfo &p = it->second;
         if (p.bytes.empty() || !hasReadableMappedRange(p.address, p.bytes.size()))
             return false;
         if (!setMemRWX(p.address, p.bytes.size()))
@@ -160,9 +193,9 @@ namespace pl::patch {
         return true;
     }
 
-    void revertAll() {
+    void revertAllImpl() {
         for (auto &kv : patches) {
-            const patchInfo &p = kv.second;
+            const PatchInfo &p = kv.second;
             if (!p.bytes.empty() &&
                 hasReadableMappedRange(p.address, p.bytes.size()) &&
                 setMemRWX(p.address, p.bytes.size())) {
@@ -174,4 +207,73 @@ namespace pl::patch {
         patches.clear();
     }
 
+} // namespace
+
+namespace pl::patch {
+
+PLAPI bool writeBytes(uintptr_t addr, const std::vector<uint8_t> &bytes,
+                      const std::string &name) {
+    return writeBytesImpl(addr, bytes, name);
+}
+
+PLAPI bool writeBytes(uintptr_t addr, const std::string &bytes,
+                      const std::string &name) {
+    return writeHexImpl(addr, bytes, name);
+}
+
+PLAPI std::vector<uint8_t> readBytes(uintptr_t addr, size_t len) {
+    return readBytesImpl(addr, len);
+}
+
+PLAPI bool revert(const std::string &name) {
+    return revertImpl(name);
+}
+
+PLAPI void revertAll() {
+    revertAllImpl();
+}
+
 } // namespace pl::patch
+
+extern "C" {
+
+PLAPI bool pl_patch_write_bytes(uintptr_t addr, const uint8_t *bytes,
+                                size_t len, const char *name) {
+    if (bytes == nullptr || name == nullptr || len == 0)
+        return false;
+
+    return writeBytesImpl(addr, std::vector<uint8_t>(bytes, bytes + len), name);
+}
+
+PLAPI bool pl_patch_write_hex(uintptr_t addr, const char *bytes,
+                              const char *name) {
+    if (bytes == nullptr || name == nullptr)
+        return false;
+
+    return writeHexImpl(addr, bytes, name);
+}
+
+PLAPI size_t pl_patch_read_bytes(uintptr_t addr, uint8_t *out, size_t len) {
+    if (out == nullptr || len == 0)
+        return 0;
+
+    const std::vector<uint8_t> bytes = readBytesImpl(addr, len);
+    if (bytes.size() != len)
+        return 0;
+
+    std::memcpy(out, bytes.data(), bytes.size());
+    return bytes.size();
+}
+
+PLAPI bool pl_patch_revert(const char *name) {
+    if (name == nullptr)
+        return false;
+
+    return revertImpl(name);
+}
+
+PLAPI void pl_patch_revert_all(void) {
+    revertAllImpl();
+}
+
+} // extern "C"

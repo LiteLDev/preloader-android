@@ -19,7 +19,14 @@
 - `GetPreloaderInput`
 - `pl_hook`
 - `pl_unhook`
+- `pl_patch_write_bytes`
+- `pl_patch_write_hex`
+- `pl_patch_read_bytes`
+- `pl_patch_revert`
+- `pl_patch_revert_all`
 - `pl_resolve_signature`
+
+为了兼容已经编译好的旧 mod，仍会保留旧的 `pl::patch::*` C++ 符号导出。新 mod 不应把这些符号当作稳定 ABI；请使用 `pl/c/Patch.h` 或 `pl/cpp/Patch.hpp` 的 inline wrapper。
 
 旧版已经删除的 `ANativeActivity_onCreate`、`android_main`、`nativeOnLauncherLoaded` 代理逻辑不属于当前 ABI 承诺。
 
@@ -38,22 +45,16 @@
 | C ABI | `pl/c/*.h` |
 | C++ 封装 | `pl/cpp/*.hpp` |
 | Hook 宏 | `pl/api/memory/Hook.h` |
-| Patch API | `pl/cpp/Patch.hpp` |
-
-兼容旧路径：
-
-- `pl/Hook.h`
-- `pl/Mod.h`
-- `pl/Patch.h`
-- `pl/PreloaderInput.h`
-- `pl/Signature.h`
-- `pl/api/Macro.h`
-- `pl/api/Types.h`
+| Patch C ABI | `pl/c/Patch.h` |
+| Patch C++ 封装 | `pl/cpp/Patch.hpp` |
+| 旧宏兼容 | `pl/api/Macro.h` |
+| 旧类型兼容 | `pl/api/Types.h` |
 
 ## 迁移建议
 
 - C mod 从 `pl/Mod.h` 迁移到 `pl/c/Mod.h`。
 - C++ mod 从 `pl/Hook.h` 迁移到 `pl/cpp/Hook.hpp`。
-- C++ mod 从 `pl/Patch.h` 迁移到 `pl/cpp/Patch.hpp`。
+- C mod 使用 `pl/c/Patch.h` 调用 patch API。
+- C++ mod 使用 `pl/cpp/Patch.hpp` 调用 patch wrapper。
 - 不要在 C 代码中 include `pl/cpp/*.hpp`。
 - 不要依赖内部目录 `pl/runtime`、`pl/internal`、`pl/memory` 的实现细节。

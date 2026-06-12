@@ -18,12 +18,6 @@ C++:
 #include <pl/cpp/Hook.hpp>
 ```
 
-旧路径也可用：
-
-```cpp
-#include <pl/Hook.h>
-```
-
 ## 类型签名
 
 ```c

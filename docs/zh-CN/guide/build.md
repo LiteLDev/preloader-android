@@ -26,6 +26,7 @@ C mod 推荐：
 ```c
 #include <pl/c/Mod.h>
 #include <pl/c/Hook.h>
+#include <pl/c/Patch.h>
 #include <pl/c/Signature.h>
 ```
 
@@ -36,15 +37,6 @@ C++ mod 推荐：
 #include <pl/cpp/Hook.hpp>
 #include <pl/cpp/Patch.hpp>
 #include <pl/cpp/Signature.hpp>
-```
-
-旧代码仍可使用：
-
-```cpp
-#include <pl/Mod.h>
-#include <pl/Hook.h>
-#include <pl/Patch.h>
-#include <pl/Signature.h>
 ```
 
 ## 最小 CMake 示例

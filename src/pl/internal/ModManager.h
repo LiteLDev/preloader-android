@@ -3,7 +3,7 @@
 #include <jni.h>
 #include <string>
 
-#include "pl/Mod.h"
+#include "pl/c/Mod.h"
 
 namespace ModManager {
 [[gnu::visibility("hidden")]] bool LoadModLibrary(

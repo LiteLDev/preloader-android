@@ -17,7 +17,16 @@ Compatibility is based on the current working tree API. Stable exports include:
 - `GetPreloaderInput`
 - `pl_hook`
 - `pl_unhook`
+- `pl_patch_write_bytes`
+- `pl_patch_write_hex`
+- `pl_patch_read_bytes`
+- `pl_patch_revert`
+- `pl_patch_revert_all`
 - `pl_resolve_signature`
+
+Legacy binary compatibility exports also include the previous `pl::patch::*`
+C++ symbols used by already built mods. New mods should not use these as a
+stable ABI; use `pl/c/Patch.h` or the inline wrappers in `pl/cpp/Patch.hpp`.
 
 Removed legacy `ANativeActivity_onCreate`, `android_main`, and `nativeOnLauncherLoaded` proxy behavior is not part of the current ABI contract.
 
@@ -36,22 +45,16 @@ Recommended paths:
 | C ABI | `pl/c/*.h` |
 | C++ wrappers | `pl/cpp/*.hpp` |
 | Hook macros | `pl/api/memory/Hook.h` |
-| Patch API | `pl/cpp/Patch.hpp` |
-
-Legacy wrappers:
-
-- `pl/Hook.h`
-- `pl/Mod.h`
-- `pl/Patch.h`
-- `pl/PreloaderInput.h`
-- `pl/Signature.h`
-- `pl/api/Macro.h`
-- `pl/api/Types.h`
+| Patch C ABI | `pl/c/Patch.h` |
+| Patch C++ wrapper | `pl/cpp/Patch.hpp` |
+| Legacy macro compatibility | `pl/api/Macro.h` |
+| Legacy type compatibility | `pl/api/Types.h` |
 
 ## Migration
 
 - C mods should migrate from `pl/Mod.h` to `pl/c/Mod.h`.
 - C++ mods should migrate from `pl/Hook.h` to `pl/cpp/Hook.hpp`.
-- C++ mods should migrate from `pl/Patch.h` to `pl/cpp/Patch.hpp`.
+- C mods should use `pl/c/Patch.h` for patch APIs.
+- C++ mods should use `pl/cpp/Patch.hpp` for patch wrappers.
 - Do not include `pl/cpp/*.hpp` from C code.
 - Do not depend on internal directories such as `pl/runtime`, `pl/internal`, or `pl/memory`.

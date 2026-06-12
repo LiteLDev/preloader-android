@@ -29,8 +29,6 @@ C++:
 
 ```cpp
 namespace pl::signature {
-uintptr_t pl_resolve_signature(const char *signature,
-                               const char *moduleName);
 uintptr_t resolveSignature(const std::string &signature,
                            const std::string &moduleName);
 std::unordered_map<std::string, uintptr_t>
@@ -101,4 +99,3 @@ uintptr_t symbolA = results["SymbolA"];
 - Empty or invalid patterns return `0`.
 - Results are cached; do not assume cached addresses survive module reloads.
 - Prefer `resolveSignatures` when resolving multiple patterns.
-

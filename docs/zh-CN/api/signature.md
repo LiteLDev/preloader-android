@@ -29,8 +29,6 @@ C++：
 
 ```cpp
 namespace pl::signature {
-uintptr_t pl_resolve_signature(const char *signature,
-                               const char *moduleName);
 uintptr_t resolveSignature(const std::string &signature,
                            const std::string &moduleName);
 std::unordered_map<std::string, uintptr_t>
@@ -103,4 +101,3 @@ uintptr_t symbolA = results["SymbolA"];
 - pattern 为空或格式非法时返回 `0`。
 - 结果会缓存；模块重新加载或内存布局变化时不要假设旧地址仍有效。
 - 批量解析多个 signature 时优先使用 `resolveSignatures`，避免重复扫描。
-

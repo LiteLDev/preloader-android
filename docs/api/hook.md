@@ -18,12 +18,6 @@ C++:
 #include <pl/cpp/Hook.hpp>
 ```
 
-Legacy:
-
-```cpp
-#include <pl/Hook.h>
-```
-
 ## Signatures
 
 ```c

@@ -9,11 +9,6 @@
 
 namespace pl::signature {
 
-inline uintptr_t pl_resolve_signature(const char *signature,
-                                      const char *moduleName) {
-  return ::pl_resolve_signature(signature, moduleName);
-}
-
 PLAPI uintptr_t resolveSignature(const std::string &signature,
                                  const std::string &moduleName);
 

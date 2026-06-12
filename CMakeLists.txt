@@ -60,18 +60,14 @@ install(TARGETS preloader
 
 install(FILES
         src/pl/Gloss.h
-        src/pl/Hook.h
         src/pl/Logger.h
-        src/pl/Mod.h
-        src/pl/Patch.h
-        src/pl/PreloaderInput.h
-        src/pl/Signature.h
         DESTINATION include/pl)
 
 install(FILES
         src/pl/c/Hook.h
         src/pl/c/Macro.h
         src/pl/c/Mod.h
+        src/pl/c/Patch.h
         src/pl/c/PreloaderInput.h
         src/pl/c/Signature.h
         src/pl/c/Types.h
