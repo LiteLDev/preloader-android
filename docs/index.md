@@ -4,6 +4,8 @@ Preloader Android 是 LeviLaunchroid 的 native mod 预加载接口。它给 mod
 
 这份文档只讲外部接口怎么用：每个页面都会写明作用、头文件、签名、参数、返回值、示例和注意事项。项目内部架构不作为主线内容。
 
+English documentation is available at [English Home](en/index.md).
+
 ## 最小 native mod
 
 ```c
@@ -38,4 +40,3 @@ void LeviMod_Load(JavaVM *vm, const PLModInfo *mod_info) {
 - C mod 优先 include `pl/c/*.h`。
 - C++ mod 优先 include `pl/cpp/*.hpp`。
 - 旧路径 `pl/*.h` 仍保留为兼容包装头。
-

@@ -2,7 +2,7 @@
 
 ## 作用
 
-Hook API 用于把目标函数替换为 detour 函数，并保存原函数入口。它基于 GlossHook 实现，支持多个 detour 按优先级组成链。
+Hook API 用于把目标函数替换为 detour 函数，并保存原函数入口。它支持多个 detour 按优先级组成链。
 
 ## 头文件
 
@@ -72,7 +72,7 @@ bool unhook(FuncPtr target, FuncPtr detour);
 
 ### 作用
 
-安装 hook。第一次 hook 某个目标函数时会调用 GlossHook；之后对同一目标添加 hook 时会重建 detour 链。
+安装 hook。第一次 hook 某个目标函数时会安装底层 hook；之后对同一目标添加 hook 时会重建 detour 链。
 
 ### 参数
 
@@ -88,7 +88,7 @@ bool unhook(FuncPtr target, FuncPtr detour);
 | 返回值 | 说明 |
 | --- | --- |
 | `0` | 成功 |
-| `-1` | 参数无效或底层 GlossHook 安装失败 |
+| `-1` | 参数无效或底层 hook 安装失败 |
 
 ### 示例
 
@@ -143,4 +143,3 @@ void install(void *target) {
 - detour 签名和目标函数不一致：会导致崩溃。
 - detour 内直接调用目标函数地址：会递归进入 detour，应该调用 `originalFunc`。
 - 在构造函数中过早 hook：必要时先确保目标库已加载，或先解析 signature。
-
