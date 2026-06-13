@@ -22,7 +22,8 @@ example-mod/
   "name": "Example Mod",
   "author": "LiteLDev",
   "version": "1.0.0",
-  "entry": "libexample.so"
+  "entry": "libexample.so",
+  "minecraft_versions": ["1.26.20", "1.26.2*", "1.26.*"]
 }
 ```
 
@@ -34,6 +35,7 @@ example-mod/
 | `author` | Author | No |
 | `version` | Version | No |
 | `icon` | Relative icon path; invalid values are ignored | No |
+| `minecraft_versions` | Compatible Minecraft versions. Exact strings and `*` prefix wildcards are supported, such as `1.26.2*` matching `1.26.20`, `1.26.21`, and `1.26.22`. Missing or empty values mean all versions are allowed. | No |
 
 ## C Entry Example
 
@@ -70,4 +72,3 @@ extern "C" void LeviMod_Load(JavaVM *vm, const PLModInfo *mod_info) {
 - `manifest.json` uses a `type` other than `preload-native`.
 - `entry` is absolute or contains `..`.
 - `entry` does not point to a `.so` file.
-

@@ -22,7 +22,8 @@ example-mod/
   "name": "Example Mod",
   "author": "LiteLDev",
   "version": "1.0.0",
-  "entry": "libexample.so"
+  "entry": "libexample.so",
+  "minecraft_versions": ["1.26.20", "1.26.2*", "1.26.*"]
 }
 ```
 
@@ -36,6 +37,7 @@ example-mod/
 | `author` | 作者 | 否 |
 | `version` | 版本 | 否 |
 | `icon` | 图标相对路径；无效时会被忽略 | 否 |
+| `minecraft_versions` | 兼容的 Minecraft 版本。支持精确字符串和 `*` 前缀通配，例如 `1.26.2*` 会匹配 `1.26.20`、`1.26.21`、`1.26.22`。缺失或为空表示兼容所有版本。 | 否 |
 
 ## C 入口示例
 
@@ -72,4 +74,3 @@ extern "C" void LeviMod_Load(JavaVM *vm, const PLModInfo *mod_info) {
 - `manifest.json` 的 `type` 不是 `preload-native`：preloader 会跳过这个目录。
 - `entry` 是绝对路径或包含 `..`：会被当成不安全路径拒绝。
 - `entry` 不是 `.so` 文件：加载会失败。
-
