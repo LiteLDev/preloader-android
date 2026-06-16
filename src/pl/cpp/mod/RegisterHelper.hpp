@@ -44,7 +44,7 @@ template <Loadable T> void bindToMod(T &myMod, Mod &self) {
   }
 }
 
-template <Loadable T> bool loadAndEnable(T &myMod, NativeMod &self) {
+template <Loadable T> bool load(T &myMod, NativeMod &self) {
   bindToMod(myMod, self);
 
   if (!self.runLoad()) {
@@ -52,6 +52,10 @@ template <Loadable T> bool loadAndEnable(T &myMod, NativeMod &self) {
     return false;
   }
 
+  return true;
+}
+
+inline bool enable(NativeMod &self) {
   if (!self.runEnable()) {
     self.getLogger().error("Failed to enable mod {}", self.getName());
     return false;
@@ -60,15 +64,37 @@ template <Loadable T> bool loadAndEnable(T &myMod, NativeMod &self) {
   return true;
 }
 
+inline bool disable(NativeMod &self) {
+  if (!self.runDisable()) {
+    self.getLogger().error("Failed to disable mod {}", self.getName());
+    return false;
+  }
+
+  return true;
+}
+
+inline bool unload(NativeMod &self) {
+  if (!self.runUnload()) {
+    self.getLogger().error("Failed to unload mod {}", self.getName());
+    return false;
+  }
+
+  NativeMod::clearCurrent();
+  return true;
+}
+
 } // namespace pl::mod
 
 #define PL_REGISTER_MOD(CLAZZ, BINDER)                                         \
   extern "C" {                                                                 \
-  PL_SHARED_EXPORT void LeviMod_Load(JavaVM *vm, const PLModInfo *mod_info) {  \
+  PL_SHARED_EXPORT bool PLMod_Load(JavaVM *vm, const PLModInfo *mod_info) {    \
     static_assert(::pl::mod::Loadable<CLAZZ>, #CLAZZ " must be Loadable");     \
     auto &self = ::pl::mod::NativeMod::createCurrent(vm, mod_info);            \
     try {                                                                      \
-      (void)::pl::mod::loadAndEnable((BINDER), self);                          \
+      const bool loaded = ::pl::mod::load((BINDER), self);                     \
+      if (!loaded)                                                             \
+        ::pl::mod::NativeMod::clearCurrent();                                  \
+      return loaded;                                                           \
     } catch (const std::exception &ex) {                                       \
       self.getLogger().error("Unhandled exception while loading mod {}: {}",   \
                              self.getName(), ex.what());                       \
@@ -76,5 +102,55 @@ template <Loadable T> bool loadAndEnable(T &myMod, NativeMod &self) {
       self.getLogger().error(                                                  \
           "Unhandled unknown exception while loading mod {}", self.getName()); \
     }                                                                          \
+    ::pl::mod::NativeMod::clearCurrent();                                      \
+    return false;                                                              \
+  }                                                                            \
+  PL_SHARED_EXPORT bool PLMod_Enable() {                                       \
+    auto self = ::pl::mod::NativeMod::current();                               \
+    if (!self)                                                                 \
+      return false;                                                            \
+    try {                                                                      \
+      return ::pl::mod::enable(*self);                                         \
+    } catch (const std::exception &ex) {                                       \
+      self->getLogger().error("Unhandled exception while enabling mod {}: {}", \
+                              self->getName(), ex.what());                     \
+    } catch (...) {                                                            \
+      self->getLogger().error(                                                 \
+          "Unhandled unknown exception while enabling mod {}",                 \
+          self->getName());                                                    \
+    }                                                                          \
+    return false;                                                              \
+  }                                                                            \
+  PL_SHARED_EXPORT bool PLMod_Disable() {                                      \
+    auto self = ::pl::mod::NativeMod::current();                               \
+    if (!self)                                                                 \
+      return true;                                                             \
+    try {                                                                      \
+      return ::pl::mod::disable(*self);                                        \
+    } catch (const std::exception &ex) {                                       \
+      self->getLogger().error("Unhandled exception while disabling mod {}: {}",\
+                              self->getName(), ex.what());                     \
+    } catch (...) {                                                            \
+      self->getLogger().error(                                                 \
+          "Unhandled unknown exception while disabling mod {}",                \
+          self->getName());                                                    \
+    }                                                                          \
+    return false;                                                              \
+  }                                                                            \
+  PL_SHARED_EXPORT bool PLMod_Unload() {                                       \
+    auto self = ::pl::mod::NativeMod::current();                               \
+    if (!self)                                                                 \
+      return true;                                                             \
+    try {                                                                      \
+      return ::pl::mod::unload(*self);                                         \
+    } catch (const std::exception &ex) {                                       \
+      self->getLogger().error("Unhandled exception while unloading mod {}: {}",\
+                              self->getName(), ex.what());                     \
+    } catch (...) {                                                            \
+      self->getLogger().error(                                                 \
+          "Unhandled unknown exception while unloading mod {}",                \
+          self->getName());                                                    \
+    }                                                                          \
+    return false;                                                              \
   }                                                                            \
   }

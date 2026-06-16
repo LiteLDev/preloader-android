@@ -68,6 +68,24 @@ Java_org_levimc_launcher_core_mods_ModManager_nativeLoadMod__Ljava_lang_String_2
 }
 
 JNIEXPORT void JNICALL
+Java_org_levimc_launcher_core_mods_ModManager_nativeEnableLoadedMods(
+    JNIEnv *env, jclass clazz) {
+  (void)env;
+  (void)clazz;
+
+  ModManager::EnableLoadedMods();
+}
+
+JNIEXPORT void JNICALL
+Java_org_levimc_launcher_core_mods_ModManager_nativeDisableAndUnloadLoadedMods(
+    JNIEnv *env, jclass clazz) {
+  (void)env;
+  (void)clazz;
+
+  ModManager::DisableAndUnloadLoadedMods();
+}
+
+JNIEXPORT void JNICALL
 Java_org_levimc_launcher_core_minecraft_MinecraftRuntimePreparer_nativeSetupRuntime(
     JNIEnv *env, jclass clazz, jstring modsPath) {
   (void)clazz;
