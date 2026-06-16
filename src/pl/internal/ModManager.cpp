@@ -2,8 +2,8 @@
 
 #include <algorithm>
 #include <android/log.h>
-#include <cstdio>
 #include <cstdint>
+#include <cstdio>
 #include <dlfcn.h>
 #include <mutex>
 #include <optional>
@@ -242,11 +242,15 @@ void FinalizeRuntimeModInfo(RuntimeModInfoStorage &storage) {
   };
 }
 
-bool CreateRuntimeModInfo(const std::filesystem::path &libraryPath,
-                          RuntimeModInfoStorage &storage) {
+bool CreateRuntimeModInfo(
+    const std::filesystem::path &libraryPath,
+    const std::optional<std::filesystem::path> &sourceModDirectory,
+    RuntimeModInfoStorage &storage) {
   namespace fs = std::filesystem;
 
-  const auto modRoot = FindModRootForLibraryPath(libraryPath);
+  const auto modRoot = sourceModDirectory.has_value()
+                           ? sourceModDirectory
+                           : FindModRootForLibraryPath(libraryPath);
   if (!modRoot.has_value()) {
     logger.error("Failed to resolve mod root for library {}",
                  libraryPath.string());
@@ -261,11 +265,6 @@ bool CreateRuntimeModInfo(const std::filesystem::path &libraryPath,
 
   const fs::path expectedLibraryPath =
       (parsedMod->rootPath / parsedMod->entryPath).lexically_normal();
-  const fs::path requestedLibraryPath = libraryPath.lexically_normal();
-  if (expectedLibraryPath != requestedLibraryPath) {
-    logger.warn("Using manifest entry {} instead of requested library {}",
-                expectedLibraryPath.string(), requestedLibraryPath.string());
-  }
 
   if (!fs::exists(expectedLibraryPath) ||
       !fs::is_regular_file(expectedLibraryPath)) {
@@ -312,15 +311,17 @@ void *AcquireModHandle(const std::string &libraryPath) {
 
 } // namespace
 
-bool ModManager::LoadModLibrary(const std::filesystem::path &libraryPath,
-                                JavaVM *vm) {
+bool ModManager::LoadModLibrary(
+    const std::filesystem::path &libraryPath,
+    const std::optional<std::filesystem::path> &sourceModDirectory,
+    JavaVM *vm) {
   RuntimeModInfoStorage modInfoStorage;
-  if (!CreateRuntimeModInfo(libraryPath, modInfoStorage))
+  if (!CreateRuntimeModInfo(libraryPath, sourceModDirectory, modInfoStorage))
     return false;
 
-  const std::string libraryPathString = modInfoStorage.libraryPath;
+  const std::string libraryPathString = libraryPath.lexically_normal().string();
   const std::string normalizedLibraryPath =
-      NormalizeLibraryPath(modInfoStorage.libraryPath);
+      NormalizeLibraryPath(libraryPathString);
 
   if (IsModAlreadyInitialized(normalizedLibraryPath)) {
 

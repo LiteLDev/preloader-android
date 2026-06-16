@@ -83,6 +83,12 @@ install(FILES
         DESTINATION include/pl/cpp)
 
 install(FILES
+        src/pl/cpp/mod/Mod.hpp
+        src/pl/cpp/mod/NativeMod.hpp
+        src/pl/cpp/mod/RegisterHelper.hpp
+        DESTINATION include/pl/cpp/mod)
+
+install(FILES
         src/pl/api/Macro.h
         src/pl/api/Encoding.h
         src/pl/api/Types.h

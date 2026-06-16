@@ -10,8 +10,11 @@
 #define PRELOADER_MAYBE_UNUSED
 #endif
 
+#define PL_SHARED_EXPORT                                                       \
+  PRELOADER_MAYBE_UNUSED __attribute__((visibility("default")))
+
 #ifdef PRELOADER_EXPORT
-#define PLAPI PRELOADER_MAYBE_UNUSED __attribute__((visibility("default")))
+#define PLAPI PL_SHARED_EXPORT
 #else
 #define PLAPI PRELOADER_MAYBE_UNUSED
 #endif
@@ -21,4 +24,3 @@
 #else
 #define PLCAPI extern PLAPI
 #endif
-
