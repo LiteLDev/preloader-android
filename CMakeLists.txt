@@ -28,7 +28,17 @@ FetchContent_Declare(
         GIT_REPOSITORY https://github.com/nlohmann/json.git
         GIT_TAG v3.11.3
 )
-FetchContent_MakeAvailable(nlohmann_json)
+FetchContent_Declare(
+        boost_pfr
+        GIT_REPOSITORY https://github.com/boostorg/pfr.git
+        GIT_TAG boost-1.88.0
+)
+FetchContent_Declare(
+        magic_enum
+        GIT_REPOSITORY https://github.com/Neargye/magic_enum.git
+        GIT_TAG v0.9.7
+)
+FetchContent_MakeAvailable(nlohmann_json boost_pfr magic_enum)
 
 find_library(log-lib log)
 find_library(android-lib android)
@@ -51,6 +61,8 @@ target_link_libraries(preloader
         ${egl-lib}
         ${gles-lib}
         nlohmann_json::nlohmann_json
+        Boost::pfr
+        magic_enum::magic_enum
 )
 
 install(TARGETS preloader
@@ -74,6 +86,7 @@ install(FILES
         DESTINATION include/pl/c)
 
 install(FILES
+        src/pl/cpp/Config.hpp
         src/pl/cpp/Hook.hpp
         src/pl/cpp/Mod.hpp
         src/pl/cpp/Patch.hpp
