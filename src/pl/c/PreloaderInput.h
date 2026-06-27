@@ -15,11 +15,14 @@ typedef bool (*PreloaderInput_OnKeyEvent_Fn)(int keyCode,
                                              unsigned int unicodeChar,
                                              bool isKeyDown);
 
+typedef bool (*PreloaderInput_OnMouse_Fn)(int button, bool isDown);
+
 typedef struct PreloaderInput_Interface {
   void (*RegisterTouchCallback)(PreloaderInput_OnTouch_Fn callback);
   void (*RegisterKeyEventCallback)(PreloaderInput_OnKeyEvent_Fn callback);
   void (*ShowKeyboard)(void);
   void (*HideKeyboard)(void);
+  void (*RegisterMouseCallback)(PreloaderInput_OnMouse_Fn callback);
 } PreloaderInput_Interface;
 
 JNIEXPORT jboolean JNICALL Java_org_levimc_launcher_preloader_PreloaderInput_nativeOnTouch(
@@ -28,6 +31,9 @@ JNIEXPORT jboolean JNICALL Java_org_levimc_launcher_preloader_PreloaderInput_nat
 JNIEXPORT jboolean JNICALL Java_org_levimc_launcher_preloader_PreloaderInput_nativeOnKeyEvent(
     JNIEnv *env, jclass clazz, jint keyCode, jint unicodeChar,
     jboolean isKeyDown);
+
+JNIEXPORT jboolean JNICALL Java_org_levimc_launcher_preloader_PreloaderInput_nativeOnMouse(
+    JNIEnv *env, jclass clazz, jint button, jboolean isDown);
 
 JNIEXPORT void JNICALL Java_org_levimc_launcher_preloader_PreloaderInput_nativeSetActivity(
     JNIEnv *env, jclass clazz, jobject activity);
