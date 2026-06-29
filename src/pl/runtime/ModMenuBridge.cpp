@@ -75,20 +75,38 @@ void SetModuleEnabled(const char *module_id, bool enabled) {
   }
 }
 
-PLModMenu_HudState g_hudState = {};
-
-void UpdateHudState(const PLModMenu_HudState *state) {
-  if (!state) return;
+void SubmitDrawCommands(const char *module_id, const PLModMenu_DrawCommand *commands, int count) {
+  if (!module_id) return;
   std::lock_guard<std::mutex> lock(g_modMenuMutex);
-  g_hudState = *state;
+  for (auto &mod : g_registeredModules) {
+    if (mod.module_id == module_id) {
+      mod.draw_commands.clear();
+      if (commands && count > 0) {
+        for (int i = 0; i < count; ++i) {
+          InternalDrawCommand icmd;
+          icmd.type = commands[i].type;
+          icmd.x = commands[i].x;
+          icmd.y = commands[i].y;
+          icmd.w = commands[i].w;
+          icmd.h = commands[i].h;
+          icmd.color = commands[i].color;
+          icmd.size = commands[i].size;
+          if (commands[i].text) {
+            icmd.text = commands[i].text;
+          }
+          mod.draw_commands.push_back(std::move(icmd));
+        }
+      }
+      return;
+    }
+  }
 }
-
 
 PLModMenu_Interface g_modMenuInterface = {
     .RegisterModule = RegisterModule,
     .UnregisterModule = UnregisterModule,
     .SetModuleEnabled = SetModuleEnabled,
-    .UpdateHudState = UpdateHudState,
+    .SubmitDrawCommands = SubmitDrawCommands,
 };
 
 } // namespace
@@ -146,10 +164,13 @@ void SetRegisteredModuleConfig(const char *module_id, const char *key,
     callback(module_id, key, value);
 }
 
-bool GetHudState(PLModMenu_HudState &out) {
+void GetDrawCommands(std::vector<InternalDrawCommand> &out) {
   std::lock_guard<std::mutex> lock(g_modMenuMutex);
-  out = g_hudState;
-  return true;
+  for (const auto &mod : g_registeredModules) {
+    if (mod.enabled && !mod.draw_commands.empty()) {
+      out.insert(out.end(), mod.draw_commands.begin(), mod.draw_commands.end());
+    }
+  }
 }
 
 } // namespace pl::runtime

@@ -7,6 +7,14 @@
 
 namespace pl::runtime {
 
+struct InternalDrawCommand {
+  PLModMenu_DrawCommandType type;
+  float x, y, w, h;
+  uint32_t color;
+  float size;
+  std::string text;
+};
+
 struct RegisteredModule {
   std::string module_id;
   std::string display_name;
@@ -26,6 +34,7 @@ struct RegisteredModule {
     std::string current_value;
   };
   std::vector<ConfigEntry> configs;
+  std::vector<InternalDrawCommand> draw_commands;
 };
 
 PLModMenu_Interface *GetModMenuInterface();
@@ -36,6 +45,6 @@ void ToggleRegisteredModule(const char *module_id, bool enabled);
 void SetRegisteredModuleConfig(const char *module_id, const char *key,
                                const char *value);
 
-bool GetHudState(PLModMenu_HudState &out);
+void GetDrawCommands(std::vector<InternalDrawCommand> &out);
 
 } // namespace pl::runtime

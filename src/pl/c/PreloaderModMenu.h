@@ -41,23 +41,25 @@ typedef struct PLModMenu_ModuleInfo {
   PLModMenu_OnConfigChanged_Fn on_config_changed;
 } PLModMenu_ModuleInfo;
 
-typedef struct PLModMenu_HudState {
-  float posX, posY, posZ;
-  float yaw, pitch;
-  float velocityX, velocityY, velocityZ;
-  float speed;
-  bool keyW, keyA, keyS, keyD, keySpace, keySneak;
-  bool lmb, rmb;
-  int cpsL, cpsR;
-  int entityCount;
-  int ping;
-} PLModMenu_HudState;
+typedef enum PLModMenu_DrawCommandType {
+  PL_DRAW_TEXT = 0,
+  PL_DRAW_RECT = 1,
+  PL_DRAW_LINE = 2
+} PLModMenu_DrawCommandType;
+
+typedef struct PLModMenu_DrawCommand {
+  PLModMenu_DrawCommandType type;
+  float x, y, w, h;
+  uint32_t color; /* ARGB */
+  float size; /* font size or line thickness */
+  const char *text; /* for text */
+} PLModMenu_DrawCommand;
 
 typedef struct PLModMenu_Interface {
   bool (*RegisterModule)(const PLModMenu_ModuleInfo *info);
   void (*UnregisterModule)(const char *module_id);
   void (*SetModuleEnabled)(const char *module_id, bool enabled);
-  void (*UpdateHudState)(const PLModMenu_HudState *state);
+  void (*SubmitDrawCommands)(const char *module_id, const PLModMenu_DrawCommand *commands, int count);
 } PLModMenu_Interface;
 
 PLAPI PLModMenu_Interface *GetPreloaderModMenu(void);
