@@ -46,12 +46,16 @@ typedef struct PLModMenu_ModuleInfo {
 typedef enum PLModMenu_DrawCommandType {
   PL_DRAW_TEXT = 0,
   PL_DRAW_RECT = 1,
-  PL_DRAW_LINE = 2
+  PL_DRAW_LINE = 2,
+  PL_DRAW_RECT_FILLED = 3,
+  PL_DRAW_CIRCLE_FILLED = 4,
+  PL_DRAW_TRIANGLE_FILLED = 5
 } PLModMenu_DrawCommandType;
 
 typedef struct PLModMenu_DrawCommand {
   PLModMenu_DrawCommandType type;
   float x, y, w, h;
+  float x3, y3;
   uint32_t color; /* ARGB */
   float size; /* font size or line thickness */
   const char *text; /* for text */

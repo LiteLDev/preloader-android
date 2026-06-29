@@ -248,7 +248,7 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetDrawComman
     size_t n = cmds.size();
 
     jintArray typesArray = env->NewIntArray(n);
-    jfloatArray rectsArray = env->NewFloatArray(n * 4);
+    jfloatArray rectsArray = env->NewFloatArray(n * 6);
     jintArray colorsArray = env->NewIntArray(n);
     jfloatArray sizesArray = env->NewFloatArray(n);
     jobjectArray textsArray = env->NewObjectArray(n, env->FindClass("java/lang/String"), nullptr);
@@ -256,15 +256,17 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetDrawComman
 
     if (n > 0) {
         std::vector<jint> types(n);
-        std::vector<jfloat> rects(n * 4);
+        std::vector<jfloat> rects(n * 6);
         std::vector<jint> colors(n);
         std::vector<jfloat> sizes(n);
         for (size_t i = 0; i < n; ++i) {
             types[i] = static_cast<jint>(cmds[i].type);
-            rects[i * 4 + 0] = cmds[i].x;
-            rects[i * 4 + 1] = cmds[i].y;
-            rects[i * 4 + 2] = cmds[i].w;
-            rects[i * 4 + 3] = cmds[i].h;
+            rects[i * 6 + 0] = cmds[i].x;
+            rects[i * 6 + 1] = cmds[i].y;
+            rects[i * 6 + 2] = cmds[i].w;
+            rects[i * 6 + 3] = cmds[i].h;
+            rects[i * 6 + 4] = cmds[i].x3;
+            rects[i * 6 + 5] = cmds[i].y3;
             colors[i] = static_cast<jint>(cmds[i].color);
             sizes[i] = cmds[i].size;
             if (!cmds[i].text.empty()) {
@@ -279,7 +281,7 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetDrawComman
             }
         }
         env->SetIntArrayRegion(typesArray, 0, n, types.data());
-        env->SetFloatArrayRegion(rectsArray, 0, n * 4, rects.data());
+        env->SetFloatArrayRegion(rectsArray, 0, n * 6, rects.data());
         env->SetIntArrayRegion(colorsArray, 0, n, colors.data());
         env->SetFloatArrayRegion(sizesArray, 0, n, sizes.data());
     }

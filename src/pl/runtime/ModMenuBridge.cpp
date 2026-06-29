@@ -90,6 +90,8 @@ void SubmitDrawCommands(const char *module_id, const PLModMenu_DrawCommand *comm
           icmd.y = commands[i].y;
           icmd.w = commands[i].w;
           icmd.h = commands[i].h;
+          icmd.x3 = commands[i].x3;
+          icmd.y3 = commands[i].y3;
           icmd.color = commands[i].color;
           icmd.size = commands[i].size;
           if (commands[i].text) {

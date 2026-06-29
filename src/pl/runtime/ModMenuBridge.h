@@ -11,6 +11,7 @@ struct InternalDrawCommand {
   std::string module_id;
   PLModMenu_DrawCommandType type;
   float x, y, w, h;
+  float x3, y3;
   uint32_t color;
   float size;
   std::string text;
