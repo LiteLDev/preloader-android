@@ -252,6 +252,7 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetDrawComman
     jintArray colorsArray = env->NewIntArray(n);
     jfloatArray sizesArray = env->NewFloatArray(n);
     jobjectArray textsArray = env->NewObjectArray(n, env->FindClass("java/lang/String"), nullptr);
+    jobjectArray modulesArray = env->NewObjectArray(n, env->FindClass("java/lang/String"), nullptr);
 
     if (n > 0) {
         std::vector<jint> types(n);
@@ -271,6 +272,11 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetDrawComman
                 env->SetObjectArrayElement(textsArray, i, str);
                 env->DeleteLocalRef(str);
             }
+            if (!cmds[i].module_id.empty()) {
+                jstring str = env->NewStringUTF(cmds[i].module_id.c_str());
+                env->SetObjectArrayElement(modulesArray, i, str);
+                env->DeleteLocalRef(str);
+            }
         }
         env->SetIntArrayRegion(typesArray, 0, n, types.data());
         env->SetFloatArrayRegion(rectsArray, 0, n * 4, rects.data());
@@ -278,18 +284,20 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetDrawComman
         env->SetFloatArrayRegion(sizesArray, 0, n, sizes.data());
     }
 
-    jobjectArray result = env->NewObjectArray(5, env->FindClass("java/lang/Object"), nullptr);
+    jobjectArray result = env->NewObjectArray(6, env->FindClass("java/lang/Object"), nullptr);
     env->SetObjectArrayElement(result, 0, typesArray);
     env->SetObjectArrayElement(result, 1, rectsArray);
     env->SetObjectArrayElement(result, 2, colorsArray);
     env->SetObjectArrayElement(result, 3, sizesArray);
     env->SetObjectArrayElement(result, 4, textsArray);
+    env->SetObjectArrayElement(result, 5, modulesArray);
 
     env->DeleteLocalRef(typesArray);
     env->DeleteLocalRef(rectsArray);
     env->DeleteLocalRef(colorsArray);
     env->DeleteLocalRef(sizesArray);
     env->DeleteLocalRef(textsArray);
+    env->DeleteLocalRef(modulesArray);
 
     return result;
 }

@@ -84,6 +84,7 @@ void SubmitDrawCommands(const char *module_id, const PLModMenu_DrawCommand *comm
       if (commands && count > 0) {
         for (int i = 0; i < count; ++i) {
           InternalDrawCommand icmd;
+          icmd.module_id = module_id;
           icmd.type = commands[i].type;
           icmd.x = commands[i].x;
           icmd.y = commands[i].y;

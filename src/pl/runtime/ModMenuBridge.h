@@ -8,6 +8,7 @@
 namespace pl::runtime {
 
 struct InternalDrawCommand {
+  std::string module_id;
   PLModMenu_DrawCommandType type;
   float x, y, w, h;
   uint32_t color;

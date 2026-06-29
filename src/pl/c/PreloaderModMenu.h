@@ -18,6 +18,8 @@ typedef enum PLModMenu_ConfigType {
   PL_CONFIG_TOGGLE = 0,
   PL_CONFIG_SLIDER_INT,
   PL_CONFIG_SLIDER_FLOAT,
+  PL_CONFIG_RADIO,
+  PL_CONFIG_COLOR,
 } PLModMenu_ConfigType;
 
 typedef struct PLModMenu_ConfigEntry {
