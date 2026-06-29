@@ -36,4 +36,6 @@ void ToggleRegisteredModule(const char *module_id, bool enabled);
 void SetRegisteredModuleConfig(const char *module_id, const char *key,
                                const char *value);
 
+bool GetHudState(PLModMenu_HudState &out);
+
 } // namespace pl::runtime

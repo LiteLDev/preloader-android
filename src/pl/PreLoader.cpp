@@ -238,4 +238,41 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeSetExternalMo
     if (idStr) env->ReleaseStringUTFChars(moduleId, idStr);
 }
 
+JNIEXPORT jfloatArray JNICALL
+Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetHudState(
+        JNIEnv *env, jclass clazz) {
+    (void)clazz;
+    PLModMenu_HudState state = {};
+    pl::runtime::GetHudState(state);
+
+    jfloatArray result = env->NewFloatArray(21);
+    if (!result) return nullptr;
+
+    float data[21];
+    data[0] = state.posX;
+    data[1] = state.posY;
+    data[2] = state.posZ;
+    data[3] = state.yaw;
+    data[4] = state.pitch;
+    data[5] = state.velocityX;
+    data[6] = state.velocityY;
+    data[7] = state.velocityZ;
+    data[8] = state.speed;
+    data[9] = state.keyW ? 1.0f : 0.0f;
+    data[10] = state.keyA ? 1.0f : 0.0f;
+    data[11] = state.keyS ? 1.0f : 0.0f;
+    data[12] = state.keyD ? 1.0f : 0.0f;
+    data[13] = state.keySpace ? 1.0f : 0.0f;
+    data[14] = state.keySneak ? 1.0f : 0.0f;
+    data[15] = state.lmb ? 1.0f : 0.0f;
+    data[16] = state.rmb ? 1.0f : 0.0f;
+    data[17] = (float)state.cpsL;
+    data[18] = (float)state.cpsR;
+    data[19] = (float)state.entityCount;
+    data[20] = (float)state.ping;
+
+    env->SetFloatArrayRegion(result, 0, 21, data);
+    return result;
+}
+
 } // extern "C"

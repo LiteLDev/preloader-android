@@ -75,10 +75,20 @@ void SetModuleEnabled(const char *module_id, bool enabled) {
   }
 }
 
+PLModMenu_HudState g_hudState = {};
+
+void UpdateHudState(const PLModMenu_HudState *state) {
+  if (!state) return;
+  std::lock_guard<std::mutex> lock(g_modMenuMutex);
+  g_hudState = *state;
+}
+
+
 PLModMenu_Interface g_modMenuInterface = {
     .RegisterModule = RegisterModule,
     .UnregisterModule = UnregisterModule,
     .SetModuleEnabled = SetModuleEnabled,
+    .UpdateHudState = UpdateHudState,
 };
 
 } // namespace
@@ -134,6 +144,12 @@ void SetRegisteredModuleConfig(const char *module_id, const char *key,
   }
   if (callback)
     callback(module_id, key, value);
+}
+
+bool GetHudState(PLModMenu_HudState &out) {
+  std::lock_guard<std::mutex> lock(g_modMenuMutex);
+  out = g_hudState;
+  return true;
 }
 
 } // namespace pl::runtime

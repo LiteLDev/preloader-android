@@ -41,10 +41,23 @@ typedef struct PLModMenu_ModuleInfo {
   PLModMenu_OnConfigChanged_Fn on_config_changed;
 } PLModMenu_ModuleInfo;
 
+typedef struct PLModMenu_HudState {
+  float posX, posY, posZ;
+  float yaw, pitch;
+  float velocityX, velocityY, velocityZ;
+  float speed;
+  bool keyW, keyA, keyS, keyD, keySpace, keySneak;
+  bool lmb, rmb;
+  int cpsL, cpsR;
+  int entityCount;
+  int ping;
+} PLModMenu_HudState;
+
 typedef struct PLModMenu_Interface {
   bool (*RegisterModule)(const PLModMenu_ModuleInfo *info);
   void (*UnregisterModule)(const char *module_id);
   void (*SetModuleEnabled)(const char *module_id, bool enabled);
+  void (*UpdateHudState)(const PLModMenu_HudState *state);
 } PLModMenu_Interface;
 
 PLAPI PLModMenu_Interface *GetPreloaderModMenu(void);
