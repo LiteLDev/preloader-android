@@ -13,6 +13,7 @@ set(PRELOADER_SOURCES
         src/pl/memory/Signature.cpp
         src/pl/runtime/InputBridge.cpp
         src/pl/runtime/JavaRuntime.cpp
+        src/pl/runtime/ModMenuBridge.cpp
 )
 
 add_library(preloader SHARED ${PRELOADER_SOURCES})
@@ -81,6 +82,7 @@ install(FILES
         src/pl/c/Mod.h
         src/pl/c/Patch.h
         src/pl/c/PreloaderInput.h
+        src/pl/c/PreloaderModMenu.h
         src/pl/c/Signature.h
         src/pl/c/Types.h
         DESTINATION include/pl/c)
