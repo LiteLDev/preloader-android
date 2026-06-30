@@ -42,6 +42,7 @@ bool RegisterModule(const PLModMenu_ModuleInfo *info) {
     cfg.min_value = src.min_value ? src.min_value : "";
     cfg.max_value = src.max_value ? src.max_value : "";
     cfg.current_value = cfg.default_value;
+    cfg.depends_on = src.depends_on ? src.depends_on : "";
     entry.configs.push_back(std::move(cfg));
   }
 

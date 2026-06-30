@@ -34,6 +34,7 @@ struct RegisteredModule {
     std::string min_value;
     std::string max_value;
     std::string current_value;
+    std::string depends_on;
   };
   std::vector<ConfigEntry> configs;
   std::vector<InternalDrawCommand> draw_commands;

@@ -205,7 +205,8 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetExternalMo
         json += ",\"default_value\":\"" + esc(cfg.default_value) + "\"";
         json += ",\"min_value\":\"" + esc(cfg.min_value) + "\"";
         json += ",\"max_value\":\"" + esc(cfg.max_value) + "\"";
-        json += ",\"current_value\":\"" + esc(cfg.current_value) + "\"}";
+        json += ",\"current_value\":\"" + esc(cfg.current_value) + "\"";
+        json += ",\"depends_on\":\"" + esc(cfg.depends_on) + "\"}";
     }
     json += "]}";
     return env->NewStringUTF(json.c_str());

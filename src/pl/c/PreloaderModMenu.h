@@ -29,6 +29,7 @@ typedef struct PLModMenu_ConfigEntry {
   const char *default_value;
   const char *min_value;
   const char *max_value;
+  const char *depends_on;
 } PLModMenu_ConfigEntry;
 
 typedef struct PLModMenu_ModuleInfo {
