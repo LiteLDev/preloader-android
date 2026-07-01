@@ -60,25 +60,68 @@ static void hook_PauseMenuOpen(void* _this) {
     if (orig_PauseMenuOpen) orig_PauseMenuOpen(_this);
 }
 
+static bool g_isHudScreenOpen = false;
+
+static void (*orig_HudScreenDtor)(void*) = nullptr;
+static void hook_HudScreenDtor(void* _this) {
+    g_isHudScreenOpen = false;
+    if (orig_HudScreenDtor) orig_HudScreenDtor(_this);
+}
+
+static void (*orig_HudScreenOpen)(void*) = nullptr;
+static void hook_HudScreenOpen(void* _this) {
+    g_isHudScreenOpen = true;
+    if (orig_HudScreenOpen) orig_HudScreenOpen(_this);
+}
+
+static bool g_isShowingMenu = false;
+static bool (*orig_isShowingMenu)(void*) = nullptr;
+static bool hook_isShowingMenu(void* _this) {
+    bool res = false;
+    if (orig_isShowingMenu) {
+        res = orig_isShowingMenu(_this);
+    }
+    g_isShowingMenu = res;
+    return res;
+}
+
 static bool g_gameHooksInitialized = false;
 
 static void InitGameHooks() {
     if (g_gameHooksInitialized) return;
     g_gameHooksInitialized = true;
 
-    const char* dtorSig = "? ? ? D1 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? 91 ? ? ? D5 F3 03 00 AA ? ? ? F9 ? ? ? F8 ? ? ? ? ? ? ? 91 ? ? ? F9 ? ? ? F9 ? ? ? 91 ? ? ? F9 ? ? ? B4 ? ? ? 94 ? ? ? F9 ? ? ? B4 ? ? ? F9 F4 03 00 AA ? ? ? F9 ? ? ? B4 ? ? ? F9 ? ? ? F9 ? ? ? F9 00 01 3F D6 ? ? ? 91 ? ? ? 92 ? ? ? 97 ? ? ? B5 ? ? ? F9 E0 03 14 AA ? ? ? F9 00 01 3F D6 E0 03 14 AA ? ? ? 94 ? ? ? F9 ? ? ? B4 ? ? ? 94 ? ? ? F9";
-    const char* openSig = "? ? ? D1 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? 91 ? ? ? D5 F4 03 00 AA ? ? ? 52 ? ? ? F9 ? ? ? F8 ? ? ? F9";
+    const char* pauseDtorSig = "? ? ? D1 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? 91 ? ? ? D5 F3 03 00 AA ? ? ? F9 ? ? ? F8 ? ? ? ? ? ? ? 91 ? ? ? F9 ? ? ? F9 ? ? ? 91 ? ? ? F9 ? ? ? B4 ? ? ? 94 ? ? ? F9 ? ? ? B4 ? ? ? F9 F4 03 00 AA ? ? ? F9 ? ? ? B4 ? ? ? F9 ? ? ? F9 ? ? ? F9 00 01 3F D6 ? ? ? 91 ? ? ? 92 ? ? ? 97 ? ? ? B5 ? ? ? F9 E0 03 14 AA ? ? ? F9 00 01 3F D6 E0 03 14 AA ? ? ? 94 ? ? ? F9 ? ? ? B4 ? ? ? 94 ? ? ? F9";
+    const char* pauseOpenSig = "? ? ? D1 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? 91 ? ? ? D5 F4 03 00 AA ? ? ? 52 ? ? ? F9 ? ? ? F8 ? ? ? F9";
+    const char* hudDtorSig = "? ? ? D1 ? ? ? A9 ? ? ? F9 ? ? ? A9 ? ? ? A9 ? ? ? 91 ? ? ? D5 F3 03 00 AA ? ? ? F9 ? ? ? F8 ? ? ? ? ? ? ? 91 ? ? ? F9 ? ? ? 91 ? ? ? F9";
+    const char* hudOpenSig = "? ? ? D1 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? 91 ? ? ? D5 ? ? ? 52 F3 03 00 AA ? ? ? F9 ? ? ? 72 ? ? ? F8 ? ? ? 97 ? ? ? F9";
+    const char* isShowingMenuSig = "? ? ? D1 ? ? ? A9 ? ? ? F9 ? ? ? A9 ? ? ? 91 ? ? ? D5 F3 03 00 AA ? ? ? F9 ? ? ? F8 ? ? ? F9 ? ? ? 38 ? ? ? F9 E8 03 00 91 20 01 3F D6 ? ? ? F9 ? ? ? B5 ? ? ? ? ? ? ? 91 ? ? ? ? ? ? ? 91 ? ? ? ? ? ? ? 91 ? ? ? ? ? ? ? 91 ? ? ? 52 ? ? ? 95";
 
-    auto results = pl::signature::resolveSignatures({dtorSig, openSig}, "libminecraftpe.so");
+    auto results = pl::signature::resolveSignatures({pauseDtorSig, pauseOpenSig, hudDtorSig, hudOpenSig, isShowingMenuSig}, "libminecraftpe.so");
 
-    uintptr_t pauseDtor = results[dtorSig];
+    uintptr_t pauseDtor = results[pauseDtorSig];
     if (pauseDtor) {
         pl_hook((PLFuncPtr)pauseDtor, (PLFuncPtr)hook_PauseMenuDtor, (PLFuncPtr*)&orig_PauseMenuDtor, PL_HOOK_PRIORITY_NORMAL);
     }
 
-    uintptr_t pauseOpen = results[openSig];
+    uintptr_t pauseOpen = results[pauseOpenSig];
     if (pauseOpen) {
         pl_hook((PLFuncPtr)pauseOpen, (PLFuncPtr)hook_PauseMenuOpen, (PLFuncPtr*)&orig_PauseMenuOpen, PL_HOOK_PRIORITY_NORMAL);
+    }
+
+    uintptr_t hudDtor = results[hudDtorSig];
+    if (hudDtor) {
+        pl_hook((PLFuncPtr)hudDtor, (PLFuncPtr)hook_HudScreenDtor, (PLFuncPtr*)&orig_HudScreenDtor, PL_HOOK_PRIORITY_NORMAL);
+    }
+
+    uintptr_t hudOpen = results[hudOpenSig];
+    if (hudOpen) {
+        pl_hook((PLFuncPtr)hudOpen, (PLFuncPtr)hook_HudScreenOpen, (PLFuncPtr*)&orig_HudScreenOpen, PL_HOOK_PRIORITY_NORMAL);
+    }
+
+    uintptr_t isShowingMenuAddr = results[isShowingMenuSig];
+    if (isShowingMenuAddr) {
+        pl_hook((PLFuncPtr)isShowingMenuAddr, (PLFuncPtr)hook_isShowingMenu, (PLFuncPtr*)&orig_isShowingMenu, PL_HOOK_PRIORITY_NORMAL);
     }
 }
 
@@ -201,6 +244,22 @@ Java_org_levimc_launcher_preloader_PreloaderInput_nativeIsPauseMenuOpen(
     (void)env;
     (void)clazz;
     return g_isPauseMenuOpen ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_org_levimc_launcher_preloader_PreloaderInput_nativeIsHudScreenOpen(
+        JNIEnv *env, jclass clazz) {
+    (void)env;
+    (void)clazz;
+    return g_isHudScreenOpen ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_org_levimc_launcher_preloader_PreloaderInput_nativeIsShowingMenu(
+        JNIEnv *env, jclass clazz) {
+    (void)env;
+    (void)clazz;
+    return g_isShowingMenu ? JNI_TRUE : JNI_FALSE;
 }
 
 PLAPI PreloaderInput_Interface *GetPreloaderInput() {
