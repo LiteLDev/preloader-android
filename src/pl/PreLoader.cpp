@@ -7,6 +7,9 @@
 #include "pl/runtime/InputBridge.h"
 #include "pl/runtime/JavaRuntime.h"
 #include "pl/runtime/ModMenuBridge.h"
+#include "pl/c/Signature.h"
+#include "pl/cpp/Signature.hpp"
+#include "pl/c/Hook.h"
 
 namespace {
     jboolean LoadModFromJava(JNIEnv *env, jstring libPath, jstring modRootPath) {
@@ -43,6 +46,42 @@ namespace {
     }
 } // namespace
 
+static bool g_isPauseMenuOpen = false;
+
+static void (*orig_PauseMenuDtor)(void*) = nullptr;
+static void hook_PauseMenuDtor(void* _this) {
+    g_isPauseMenuOpen = false;
+    if (orig_PauseMenuDtor) orig_PauseMenuDtor(_this);
+}
+
+static void (*orig_PauseMenuOpen)(void*) = nullptr;
+static void hook_PauseMenuOpen(void* _this) {
+    g_isPauseMenuOpen = true;
+    if (orig_PauseMenuOpen) orig_PauseMenuOpen(_this);
+}
+
+static bool g_gameHooksInitialized = false;
+
+static void InitGameHooks() {
+    if (g_gameHooksInitialized) return;
+    g_gameHooksInitialized = true;
+
+    const char* dtorSig = "? ? ? D1 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? 91 ? ? ? D5 F3 03 00 AA ? ? ? F9 ? ? ? F8 ? ? ? ? ? ? ? 91 ? ? ? F9 ? ? ? F9 ? ? ? 91 ? ? ? F9 ? ? ? B4 ? ? ? 94 ? ? ? F9 ? ? ? B4 ? ? ? F9 F4 03 00 AA ? ? ? F9 ? ? ? B4 ? ? ? F9 ? ? ? F9 ? ? ? F9 00 01 3F D6 ? ? ? 91 ? ? ? 92 ? ? ? 97 ? ? ? B5 ? ? ? F9 E0 03 14 AA ? ? ? F9 00 01 3F D6 E0 03 14 AA ? ? ? 94 ? ? ? F9 ? ? ? B4 ? ? ? 94 ? ? ? F9";
+    const char* openSig = "? ? ? D1 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? 91 ? ? ? D5 F4 03 00 AA ? ? ? 52 ? ? ? F9 ? ? ? F8 ? ? ? F9";
+
+    auto results = pl::signature::resolveSignatures({dtorSig, openSig}, "libminecraftpe.so");
+
+    uintptr_t pauseDtor = results[dtorSig];
+    if (pauseDtor) {
+        pl_hook((PLFuncPtr)pauseDtor, (PLFuncPtr)hook_PauseMenuDtor, (PLFuncPtr*)&orig_PauseMenuDtor, PL_HOOK_PRIORITY_NORMAL);
+    }
+
+    uintptr_t pauseOpen = results[openSig];
+    if (pauseOpen) {
+        pl_hook((PLFuncPtr)pauseOpen, (PLFuncPtr)hook_PauseMenuOpen, (PLFuncPtr*)&orig_PauseMenuOpen, PL_HOOK_PRIORITY_NORMAL);
+    }
+}
+
 extern "C" {
 
 JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved) {
@@ -76,6 +115,7 @@ Java_org_levimc_launcher_core_mods_ModManager_nativeEnableLoadedMods(
 (void)clazz;
 
 ModManager::EnableLoadedMods();
+InitGameHooks();
 }
 
 JNIEXPORT void JNICALL
@@ -153,6 +193,14 @@ Java_org_levimc_launcher_preloader_PreloaderInput_nativeClearActivity(
 (void)clazz;
 
 pl::runtime::ClearActivity(env);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_org_levimc_launcher_preloader_PreloaderInput_nativeIsPauseMenuOpen(
+        JNIEnv *env, jclass clazz) {
+    (void)env;
+    (void)clazz;
+    return g_isPauseMenuOpen ? JNI_TRUE : JNI_FALSE;
 }
 
 PLAPI PreloaderInput_Interface *GetPreloaderInput() {
