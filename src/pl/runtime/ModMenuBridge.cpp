@@ -10,6 +10,12 @@ namespace {
 std::vector<RegisteredModule> g_registeredModules;
 std::mutex g_modMenuMutex;
 
+struct RegisteredFont {
+  std::string font_id;
+  std::vector<unsigned char> data;
+};
+std::vector<RegisteredFont> g_registeredFonts;
+
 bool RegisterModule(const PLModMenu_ModuleInfo *info) {
   if (!info || !info->module_id || !info->display_name)
     return false;
@@ -27,6 +33,7 @@ bool RegisterModule(const PLModMenu_ModuleInfo *info) {
   entry.description = info->description ? info->description : "";
   entry.mod_id = info->mod_id ? info->mod_id : "";
   entry.enabled = info->default_enabled;
+  entry.hide_in_hud_editor = info->hide_in_hud_editor;
   entry.on_toggle = info->on_toggle;
   entry.on_config_changed = info->on_config_changed;
 
@@ -98,6 +105,9 @@ void SubmitDrawCommands(const char *module_id, const PLModMenu_DrawCommand *comm
           if (commands[i].text) {
             icmd.text = commands[i].text;
           }
+          if (commands[i].font_id) {
+            icmd.font_id = commands[i].font_id;
+          }
           mod.draw_commands.push_back(std::move(icmd));
         }
       }
@@ -111,6 +121,7 @@ PLModMenu_Interface g_modMenuInterface = {
     .UnregisterModule = UnregisterModule,
     .SetModuleEnabled = SetModuleEnabled,
     .SubmitDrawCommands = SubmitDrawCommands,
+  .RegisterFont = RegisterFontInternal,
 };
 
 } // namespace
@@ -175,6 +186,30 @@ void GetDrawCommands(std::vector<InternalDrawCommand> &out) {
       out.insert(out.end(), mod.draw_commands.begin(), mod.draw_commands.end());
     }
   }
+}
+
+bool RegisterFontInternal(const char *font_id, const unsigned char *ttf_data, int ttf_size) {
+  if (!font_id || !ttf_data || ttf_size <= 0) return false;
+  std::lock_guard<std::mutex> lock(g_modMenuMutex);
+  for (auto &f : g_registeredFonts) {
+    if (f.font_id == font_id) return false; // Already registered
+  }
+  RegisteredFont f;
+  f.font_id = font_id;
+  f.data.assign(ttf_data, ttf_data + ttf_size);
+  g_registeredFonts.push_back(std::move(f));
+  return true;
+}
+
+const std::vector<unsigned char>* GetRegisteredFontBytes(const char *font_id) {
+  if (!font_id) return nullptr;
+  std::lock_guard<std::mutex> lock(g_modMenuMutex);
+  for (const auto &f : g_registeredFonts) {
+    if (f.font_id == font_id) {
+      return &f.data;
+    }
+  }
+  return nullptr;
 }
 
 } // namespace pl::runtime

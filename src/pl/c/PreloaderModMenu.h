@@ -42,6 +42,7 @@ typedef struct PLModMenu_ModuleInfo {
   int config_count;
   const PLModMenu_ConfigEntry *configs;
   PLModMenu_OnConfigChanged_Fn on_config_changed;
+  bool hide_in_hud_editor;
 } PLModMenu_ModuleInfo;
 
 typedef enum PLModMenu_DrawCommandType {
@@ -60,6 +61,7 @@ typedef struct PLModMenu_DrawCommand {
   uint32_t color; /* ARGB */
   float size; /* font size or line thickness */
   const char *text; /* for text */
+  const char *font_id; /* for custom fonts */
 } PLModMenu_DrawCommand;
 
 typedef struct PLModMenu_Interface {
@@ -67,6 +69,7 @@ typedef struct PLModMenu_Interface {
   void (*UnregisterModule)(const char *module_id);
   void (*SetModuleEnabled)(const char *module_id, bool enabled);
   void (*SubmitDrawCommands)(const char *module_id, const PLModMenu_DrawCommand *commands, int count);
+  bool (*RegisterFont)(const char *font_id, const unsigned char *ttf_data, int ttf_size);
 } PLModMenu_Interface;
 
 PLAPI PLModMenu_Interface *GetPreloaderModMenu(void);

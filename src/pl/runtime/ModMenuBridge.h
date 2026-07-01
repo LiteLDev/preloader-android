@@ -15,6 +15,7 @@ struct InternalDrawCommand {
   uint32_t color;
   float size;
   std::string text;
+  std::string font_id;
 };
 
 struct RegisteredModule {
@@ -23,6 +24,7 @@ struct RegisteredModule {
   std::string description;
   std::string mod_id;
   bool enabled;
+  bool hide_in_hud_editor;
   PLModMenu_OnToggle_Fn on_toggle;
   PLModMenu_OnConfigChanged_Fn on_config_changed;
 
@@ -49,5 +51,8 @@ void SetRegisteredModuleConfig(const char *module_id, const char *key,
                                const char *value);
 
 void GetDrawCommands(std::vector<InternalDrawCommand> &out);
+
+bool RegisterFontInternal(const char *font_id, const unsigned char *ttf_data, int ttf_size);
+const std::vector<unsigned char>* GetRegisteredFontBytes(const char *font_id);
 
 } // namespace pl::runtime

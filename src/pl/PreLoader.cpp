@@ -195,6 +195,7 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetExternalMo
     json += ",\"description\":\"" + esc(mod.description) + "\"";
     json += ",\"mod_id\":\"" + esc(mod.mod_id) + "\"";
     json += ",\"enabled\":" + std::string(mod.enabled ? "true" : "false");
+    json += ",\"hide_in_hud_editor\":" + std::string(mod.hide_in_hud_editor ? "true" : "false");
     json += ",\"configs\":[";
     for (size_t i = 0; i < mod.configs.size(); ++i) {
         const auto &cfg = mod.configs[i];
@@ -254,6 +255,7 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetDrawComman
     jfloatArray sizesArray = env->NewFloatArray(n);
     jobjectArray textsArray = env->NewObjectArray(n, env->FindClass("java/lang/String"), nullptr);
     jobjectArray modulesArray = env->NewObjectArray(n, env->FindClass("java/lang/String"), nullptr);
+    jobjectArray fontsArray = env->NewObjectArray(n, env->FindClass("java/lang/String"), nullptr);
 
     if (n > 0) {
         std::vector<jint> types(n);
@@ -280,6 +282,11 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetDrawComman
                 env->SetObjectArrayElement(modulesArray, i, str);
                 env->DeleteLocalRef(str);
             }
+            if (!cmds[i].font_id.empty()) {
+                jstring str = env->NewStringUTF(cmds[i].font_id.c_str());
+                env->SetObjectArrayElement(fontsArray, i, str);
+                env->DeleteLocalRef(str);
+            }
         }
         env->SetIntArrayRegion(typesArray, 0, n, types.data());
         env->SetFloatArrayRegion(rectsArray, 0, n * 6, rects.data());
@@ -287,13 +294,14 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetDrawComman
         env->SetFloatArrayRegion(sizesArray, 0, n, sizes.data());
     }
 
-    jobjectArray result = env->NewObjectArray(6, env->FindClass("java/lang/Object"), nullptr);
+    jobjectArray result = env->NewObjectArray(7, env->FindClass("java/lang/Object"), nullptr);
     env->SetObjectArrayElement(result, 0, typesArray);
     env->SetObjectArrayElement(result, 1, rectsArray);
     env->SetObjectArrayElement(result, 2, colorsArray);
     env->SetObjectArrayElement(result, 3, sizesArray);
     env->SetObjectArrayElement(result, 4, textsArray);
     env->SetObjectArrayElement(result, 5, modulesArray);
+    env->SetObjectArrayElement(result, 6, fontsArray);
 
     env->DeleteLocalRef(typesArray);
     env->DeleteLocalRef(rectsArray);
@@ -301,7 +309,26 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetDrawComman
     env->DeleteLocalRef(sizesArray);
     env->DeleteLocalRef(textsArray);
     env->DeleteLocalRef(modulesArray);
+    env->DeleteLocalRef(fontsArray);
 
+    return result;
+}
+
+JNIEXPORT jbyteArray JNICALL
+Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetRegisteredFontBytes(
+        JNIEnv *env, jclass clazz, jstring fontId) {
+    (void)clazz;
+    if (!fontId) return nullptr;
+    const char *idStr = env->GetStringUTFChars(fontId, nullptr);
+    if (!idStr) return nullptr;
+    
+    const std::vector<unsigned char>* fontData = pl::runtime::GetRegisteredFontBytes(idStr);
+    env->ReleaseStringUTFChars(fontId, idStr);
+    
+    if (!fontData || fontData->empty()) return nullptr;
+    
+    jbyteArray result = env->NewByteArray(fontData->size());
+    env->SetByteArrayRegion(result, 0, fontData->size(), reinterpret_cast<const jbyte*>(fontData->data()));
     return result;
 }
 
