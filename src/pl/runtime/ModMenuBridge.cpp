@@ -36,6 +36,8 @@ bool RegisterModule(const PLModMenu_ModuleInfo *info) {
   entry.hide_in_hud_editor = info->hide_in_hud_editor;
   entry.on_toggle = info->on_toggle;
   entry.on_config_changed = info->on_config_changed;
+  if (info->config_count > 0 && info->configs)
+    entry.configs.reserve(static_cast<size_t>(info->config_count));
 
   for (int i = 0; i < info->config_count && info->configs; ++i) {
     const auto &src = info->configs[i];
@@ -70,26 +72,19 @@ void UnregisterModule(const char *module_id) {
 }
 
 void SetModuleEnabled(const char *module_id, bool enabled) {
+  ToggleRegisteredModule(module_id, enabled);
+}
+
+void SubmitDrawCommands(const char *module_id,
+                        const PLModMenu_DrawCommand *commands, int count) {
   if (!module_id)
     return;
   std::lock_guard<std::mutex> lock(g_modMenuMutex);
   for (auto &mod : g_registeredModules) {
     if (mod.module_id == module_id) {
-      mod.enabled = enabled;
-      if (mod.on_toggle)
-        mod.on_toggle(module_id, enabled);
-      return;
-    }
-  }
-}
-
-void SubmitDrawCommands(const char *module_id, const PLModMenu_DrawCommand *commands, int count) {
-  if (!module_id) return;
-  std::lock_guard<std::mutex> lock(g_modMenuMutex);
-  for (auto &mod : g_registeredModules) {
-    if (mod.module_id == module_id) {
       mod.draw_commands.clear();
       if (commands && count > 0) {
+        mod.draw_commands.reserve(static_cast<size_t>(count));
         for (int i = 0; i < count; ++i) {
           InternalDrawCommand icmd;
           icmd.module_id = module_id;
@@ -121,7 +116,7 @@ PLModMenu_Interface g_modMenuInterface = {
     .UnregisterModule = UnregisterModule,
     .SetModuleEnabled = SetModuleEnabled,
     .SubmitDrawCommands = SubmitDrawCommands,
-  .RegisterFont = RegisterFontInternal,
+    .RegisterFont = RegisterFontInternal,
 };
 
 } // namespace
@@ -142,6 +137,8 @@ bool GetRegisteredModuleInfo(int index, RegisteredModule &out) {
 }
 
 void ToggleRegisteredModule(const char *module_id, bool enabled) {
+  if (!module_id)
+    return;
   PLModMenu_OnToggle_Fn callback = nullptr;
   {
     std::lock_guard<std::mutex> lock(g_modMenuMutex);
@@ -159,6 +156,9 @@ void ToggleRegisteredModule(const char *module_id, bool enabled) {
 
 void SetRegisteredModuleConfig(const char *module_id, const char *key,
                                const char *value) {
+  if (!module_id || !key)
+    return;
+  const char *safeValue = value ? value : "";
   PLModMenu_OnConfigChanged_Fn callback = nullptr;
   {
     std::lock_guard<std::mutex> lock(g_modMenuMutex);
@@ -166,7 +166,7 @@ void SetRegisteredModuleConfig(const char *module_id, const char *key,
       if (mod.module_id == module_id) {
         for (auto &cfg : mod.configs) {
           if (cfg.key == key) {
-            cfg.current_value = value ? value : "";
+            cfg.current_value = safeValue;
             break;
           }
         }
@@ -176,11 +176,17 @@ void SetRegisteredModuleConfig(const char *module_id, const char *key,
     }
   }
   if (callback)
-    callback(module_id, key, value);
+    callback(module_id, key, safeValue);
 }
 
 void GetDrawCommands(std::vector<InternalDrawCommand> &out) {
   std::lock_guard<std::mutex> lock(g_modMenuMutex);
+  size_t commandCount = 0;
+  for (const auto &mod : g_registeredModules) {
+    if (mod.enabled)
+      commandCount += mod.draw_commands.size();
+  }
+  out.reserve(out.size() + commandCount);
   for (const auto &mod : g_registeredModules) {
     if (mod.enabled && !mod.draw_commands.empty()) {
       out.insert(out.end(), mod.draw_commands.begin(), mod.draw_commands.end());
@@ -188,11 +194,14 @@ void GetDrawCommands(std::vector<InternalDrawCommand> &out) {
   }
 }
 
-bool RegisterFontInternal(const char *font_id, const unsigned char *ttf_data, int ttf_size) {
-  if (!font_id || !ttf_data || ttf_size <= 0) return false;
+bool RegisterFontInternal(const char *font_id, const unsigned char *ttf_data,
+                          int ttf_size) {
+  if (!font_id || !ttf_data || ttf_size <= 0)
+    return false;
   std::lock_guard<std::mutex> lock(g_modMenuMutex);
   for (auto &f : g_registeredFonts) {
-    if (f.font_id == font_id) return false; // Already registered
+    if (f.font_id == font_id)
+      return false; // Already registered
   }
   RegisteredFont f;
   f.font_id = font_id;
@@ -201,15 +210,18 @@ bool RegisterFontInternal(const char *font_id, const unsigned char *ttf_data, in
   return true;
 }
 
-const std::vector<unsigned char>* GetRegisteredFontBytes(const char *font_id) {
-  if (!font_id) return nullptr;
+bool GetRegisteredFontBytes(const char *font_id,
+                            std::vector<unsigned char> &out) {
+  if (!font_id)
+    return false;
   std::lock_guard<std::mutex> lock(g_modMenuMutex);
   for (const auto &f : g_registeredFonts) {
     if (f.font_id == font_id) {
-      return &f.data;
+      out = f.data;
+      return true;
     }
   }
-  return nullptr;
+  return false;
 }
 
 } // namespace pl::runtime

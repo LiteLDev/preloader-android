@@ -52,7 +52,9 @@ void SetRegisteredModuleConfig(const char *module_id, const char *key,
 
 void GetDrawCommands(std::vector<InternalDrawCommand> &out);
 
-bool RegisterFontInternal(const char *font_id, const unsigned char *ttf_data, int ttf_size);
-const std::vector<unsigned char>* GetRegisteredFontBytes(const char *font_id);
+bool RegisterFontInternal(const char *font_id, const unsigned char *ttf_data,
+                          int ttf_size);
+bool GetRegisteredFontBytes(const char *font_id,
+                            std::vector<unsigned char> &out);
 
 } // namespace pl::runtime
