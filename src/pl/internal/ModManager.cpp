@@ -13,6 +13,7 @@
 #include <nlohmann/json.hpp>
 
 #include "pl/Logger.h"
+#include "pl/runtime/ModMenuBridge.h"
 
 namespace {
 constexpr const char *kModLoadSymbol = "LeviMod_Load";
@@ -430,7 +431,12 @@ bool ModManager::LoadModLibrary(
     entry.disable = ResolveLifecycleFunc(handle, kLifecycleDisableSymbol);
     entry.unload = ResolveLifecycleFunc(handle, kLifecycleUnloadSymbol);
 
-    if (!load(vm, &modInfoStorage.info)) {
+    bool loaded = false;
+    {
+      pl::runtime::ScopedModMenuOwner owner(modInfoStorage.modId);
+      loaded = load(vm, &modInfoStorage.info);
+    }
+    if (!loaded) {
       logger.error("Failed to run PLMod_Load for {}", modInfoStorage.modId);
       return false;
     }
@@ -462,7 +468,12 @@ void ModManager::EnableLoadedMods() {
       continue;
     }
 
-    if (!entry->enable()) {
+    bool enabled = false;
+    {
+      pl::runtime::ScopedModMenuOwner owner(entry->modId);
+      enabled = entry->enable();
+    }
+    if (!enabled) {
       logger.error("Failed to enable lifecycle mod {}", entry->modId);
       continue;
     }
@@ -485,7 +496,11 @@ void ModManager::DisableAndUnloadLoadedMods() {
     if (entry->state == LoadedModState::Enabled) {
       bool disabled = true;
       if (entry->disable) {
-        if (!entry->disable()) {
+        {
+          pl::runtime::ScopedModMenuOwner owner(entry->modId);
+          disabled = entry->disable();
+        }
+        if (!disabled) {
           disabled = false;
           logger.error("Failed to disable lifecycle mod {}", entry->modId);
         }
@@ -504,7 +519,12 @@ void ModManager::DisableAndUnloadLoadedMods() {
     }
 
     if (entry->unload) {
-      if (!entry->unload()) {
+      bool unloaded = false;
+      {
+        pl::runtime::ScopedModMenuOwner owner(entry->modId);
+        unloaded = entry->unload();
+      }
+      if (!unloaded) {
         logger.error("Failed to unload lifecycle mod {}", entry->modId);
         continue;
       }
@@ -513,5 +533,6 @@ void ModManager::DisableAndUnloadLoadedMods() {
                   kLifecycleUnloadSymbol);
     }
     SetLoadedModState(key, LoadedModState::Unloaded);
+    pl::runtime::UnregisterModulesForModId(entry->modId);
   }
 }

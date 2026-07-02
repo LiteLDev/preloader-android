@@ -44,11 +44,21 @@ struct RegisteredModule {
 
 PLModMenu_Interface *GetModMenuInterface();
 
+class ScopedModMenuOwner {
+public:
+  explicit ScopedModMenuOwner(std::string modId);
+  ~ScopedModMenuOwner();
+
+  ScopedModMenuOwner(const ScopedModMenuOwner &) = delete;
+  ScopedModMenuOwner &operator=(const ScopedModMenuOwner &) = delete;
+};
+
 int GetRegisteredModuleCount();
 bool GetRegisteredModuleInfo(int index, RegisteredModule &out);
 void ToggleRegisteredModule(const char *module_id, bool enabled);
 void SetRegisteredModuleConfig(const char *module_id, const char *key,
                                const char *value);
+void UnregisterModulesForModId(const std::string &modId);
 
 void GetDrawCommands(std::vector<InternalDrawCommand> &out);
 
