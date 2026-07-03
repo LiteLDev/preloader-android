@@ -42,6 +42,22 @@ struct RegisteredModule {
   std::vector<InternalDrawCommand> draw_commands;
 };
 
+struct RegisteredButton {
+  std::string button_id;
+  std::string module_id;
+  std::string display_name;
+  std::string mod_id;
+  std::string label;
+  int android_key_code;
+  PLModMenu_ButtonBehavior behavior;
+  bool default_visible;
+  bool module_enabled;
+  PLModMenu_ButtonStyle style;
+  float width_scale;
+  float height_scale;
+  PLModMenu_OnButtonEvent_Fn on_event;
+};
+
 PLModMenu_Interface *GetModMenuInterface();
 
 class ScopedModMenuOwner {
@@ -59,6 +75,11 @@ void ToggleRegisteredModule(const char *module_id, bool enabled);
 void SetRegisteredModuleConfig(const char *module_id, const char *key,
                                const char *value);
 void UnregisterModulesForModId(const std::string &modId);
+
+int GetRegisteredButtonCount();
+bool GetRegisteredButtonInfo(int index, RegisteredButton &out);
+void DispatchRegisteredButtonEvent(const char *button_id,
+                                   PLModMenu_ButtonEvent event, float value);
 
 void GetDrawCommands(std::vector<InternalDrawCommand> &out);
 

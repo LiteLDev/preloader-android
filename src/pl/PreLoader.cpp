@@ -382,6 +382,61 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeSetExternalMo
     env->ReleaseStringUTFChars(moduleId, idStr);
 }
 
+JNIEXPORT jint JNICALL
+Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetExternalButtonCount(
+    JNIEnv *env, jclass clazz) {
+  (void)env;
+  (void)clazz;
+  return pl::runtime::GetRegisteredButtonCount();
+}
+
+JNIEXPORT jstring JNICALL
+Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetExternalButtonInfo(
+    JNIEnv *env, jclass clazz, jint index) {
+  (void)clazz;
+  pl::runtime::RegisteredButton button;
+  if (!pl::runtime::GetRegisteredButtonInfo(index, button))
+    return env->NewStringUTF("{}");
+
+  nlohmann::json payload = {
+      {"button_id", button.button_id},
+      {"module_id", button.module_id},
+      {"display_name", button.display_name},
+      {"mod_id", button.mod_id},
+      {"label", button.label},
+      {"android_key_code", button.android_key_code},
+      {"behavior", static_cast<int>(button.behavior)},
+      {"default_visible", button.default_visible},
+      {"module_enabled", button.module_enabled},
+      {"style",
+       {{"preset", static_cast<int>(button.style.preset)},
+        {"normal_bg_color", button.style.normal_bg_color},
+        {"active_bg_color", button.style.active_bg_color},
+        {"border_color", button.style.border_color},
+        {"text_color", button.style.text_color},
+        {"active_text_color", button.style.active_text_color},
+        {"width_scale", button.width_scale},
+        {"height_scale", button.height_scale}}},
+  };
+  const std::string json = payload.dump();
+  return env->NewStringUTF(json.c_str());
+}
+
+JNIEXPORT void JNICALL
+Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeDispatchExternalButtonEvent(
+    JNIEnv *env, jclass clazz, jstring buttonId, jint event, jfloat value) {
+  (void)clazz;
+  if (!buttonId)
+    return;
+
+  const char *id = env->GetStringUTFChars(buttonId, nullptr);
+  if (id) {
+    pl::runtime::DispatchRegisteredButtonEvent(
+        id, static_cast<PLModMenu_ButtonEvent>(event), value);
+    env->ReleaseStringUTFChars(buttonId, id);
+  }
+}
+
 JNIEXPORT jobjectArray JNICALL
 Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetDrawCommands(
     JNIEnv *env, jclass clazz) {

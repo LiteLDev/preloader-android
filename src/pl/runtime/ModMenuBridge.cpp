@@ -16,13 +16,19 @@ constexpr size_t kMaxModuleIdLength = 160;
 constexpr size_t kMaxDisplayNameLength = 160;
 constexpr size_t kMaxDescriptionLength = 1024;
 constexpr size_t kMaxModIdLength = 160;
+constexpr size_t kMaxButtonLabelLength = 32;
 constexpr size_t kMaxConfigStringLength = 2048;
 constexpr size_t kMaxDrawTextLength = 4096;
 constexpr int kMaxConfigCount = 128;
 constexpr int kMaxDrawCommandCount = 4096;
 constexpr int kMaxFontBytes = 8 * 1024 * 1024;
+constexpr float kMinButtonWidthScale = 0.6f;
+constexpr float kMaxButtonWidthScale = 4.0f;
+constexpr float kMinButtonHeightScale = 0.6f;
+constexpr float kMaxButtonHeightScale = 2.0f;
 
 std::vector<RegisteredModule> g_registeredModules;
+std::vector<RegisteredButton> g_registeredButtons;
 std::mutex g_modMenuMutex;
 thread_local std::vector<std::string> g_currentOwnerModIds;
 
@@ -74,6 +80,35 @@ bool ReadOptionalString(const char *value, size_t maxLength,
 
 bool IsValidConfigType(PLModMenu_ConfigType type) {
   return type >= PL_CONFIG_TOGGLE && type <= PL_CONFIG_COLOR;
+}
+
+bool IsValidButtonBehavior(PLModMenu_ButtonBehavior behavior) {
+  return behavior >= PL_BUTTON_CLICK && behavior <= PL_BUTTON_TOGGLE;
+}
+
+bool IsValidButtonStylePreset(PLModMenu_ButtonStylePreset preset) {
+  return preset >= PL_BUTTON_STYLE_KEYCAP && preset <= PL_BUTTON_STYLE_ACCENT;
+}
+
+bool IsValidButtonEvent(PLModMenu_ButtonEvent event) {
+  return event >= PL_BUTTON_EVENT_CLICK && event <= PL_BUTTON_EVENT_SCROLL;
+}
+
+PLModMenu_ButtonStyle DefaultButtonStyle() {
+  return {
+      .preset = PL_BUTTON_STYLE_KEYCAP,
+      .normal_bg_color = 0,
+      .active_bg_color = 0,
+      .border_color = 0,
+      .text_color = 0,
+      .active_text_color = 0,
+  };
+}
+
+float NormalizeButtonScale(float value, float minValue, float maxValue) {
+  if (!std::isfinite(value) || value <= 0.0f)
+    return 0.0f;
+  return std::clamp(value, minValue, maxValue);
 }
 
 bool HasFiniteDrawGeometry(const PLModMenu_DrawCommand &command) {
@@ -214,7 +249,17 @@ bool RegisterModule(const PLModMenu_ModuleInfo *info) {
     entry.configs.push_back(std::move(cfg));
   }
 
+  const std::string registeredModuleId = entry.module_id;
+  const std::string registeredModId = entry.mod_id;
+  const bool registeredEnabled = entry.enabled;
   g_registeredModules.push_back(std::move(entry));
+  for (auto &button : g_registeredButtons) {
+    if (button.module_id == registeredModuleId) {
+      button.module_enabled = registeredEnabled;
+      if (button.mod_id.empty())
+        button.mod_id = registeredModId;
+    }
+  }
   return true;
 }
 
@@ -228,6 +273,12 @@ void UnregisterModule(const char *module_id) {
                        return m.module_id == module_id;
                      }),
       g_registeredModules.end());
+  g_registeredButtons.erase(
+      std::remove_if(g_registeredButtons.begin(), g_registeredButtons.end(),
+                     [module_id](const RegisteredButton &button) {
+                       return button.module_id == module_id;
+                     }),
+      g_registeredButtons.end());
 }
 
 void SetModuleEnabled(const char *module_id, bool enabled) {
@@ -277,12 +328,152 @@ void SubmitDrawCommands(const char *module_id,
   }
 }
 
+bool RegisterButtonInternal(const PLModMenu_ButtonInfo *info,
+                            const PLModMenu_ButtonStyle *style,
+                            float widthScale, float heightScale) {
+  if (!info) {
+    preloader_logger.error("Mod Menu button registration received null info");
+    return false;
+  }
+
+  PLModMenu_ButtonStyle resolvedStyle = DefaultButtonStyle();
+  if (style) {
+    if (!IsValidButtonStylePreset(style->preset)) {
+      preloader_logger.error(
+          "Rejected Mod Menu button: invalid style preset {}",
+          static_cast<int>(style->preset));
+      return false;
+    }
+    resolvedStyle = *style;
+  }
+  const float resolvedWidthScale =
+      NormalizeButtonScale(widthScale, kMinButtonWidthScale,
+                           kMaxButtonWidthScale);
+  const float resolvedHeightScale =
+      NormalizeButtonScale(heightScale, kMinButtonHeightScale,
+                           kMaxButtonHeightScale);
+
+  std::string buttonId;
+  std::string moduleId;
+  std::string displayName;
+  std::string modId;
+  std::string label;
+  if (!ReadRequiredString(info->button_id, kMaxModuleIdLength, "button_id",
+                          buttonId) ||
+      !ReadRequiredString(info->module_id, kMaxModuleIdLength, "module_id",
+                          moduleId) ||
+      !ReadRequiredString(info->display_name, kMaxDisplayNameLength,
+                          "button display_name", displayName) ||
+      !ReadOptionalString(info->mod_id, kMaxModIdLength, "button mod_id",
+                          modId) ||
+      !ReadOptionalString(info->label, kMaxButtonLabelLength, "button label",
+                          label)) {
+    return false;
+  }
+
+  if (!IsValidButtonBehavior(info->behavior)) {
+    preloader_logger.error("Rejected Mod Menu button {}: invalid behavior {}",
+                           buttonId, static_cast<int>(info->behavior));
+    return false;
+  }
+
+  const std::string ownerModId = CurrentOwnerModId();
+  if (!ownerModId.empty()) {
+    if (modId.empty()) {
+      modId = ownerModId;
+    } else if (modId != ownerModId) {
+      preloader_logger.error(
+          "Rejected Mod Menu button {}: declared mod_id {} does not match "
+          "owning lifecycle mod {}",
+          buttonId, modId, ownerModId);
+      return false;
+    }
+  }
+
+  std::lock_guard<std::mutex> lock(g_modMenuMutex);
+  for (const auto &button : g_registeredButtons) {
+    if (button.button_id == buttonId) {
+      preloader_logger.error("Rejected duplicate Mod Menu button {}",
+                             buttonId);
+      return false;
+    }
+  }
+
+  bool moduleEnabled = false;
+  for (const auto &mod : g_registeredModules) {
+    if (mod.module_id == moduleId) {
+      moduleEnabled = mod.enabled;
+      if (modId.empty()) {
+        modId = mod.mod_id;
+      } else if (!mod.mod_id.empty() && modId != mod.mod_id) {
+        preloader_logger.error(
+            "Rejected Mod Menu button {}: mod_id {} does not match module {} "
+            "owner {}",
+            buttonId, modId, moduleId, mod.mod_id);
+        return false;
+      }
+      break;
+    }
+  }
+
+  RegisteredButton entry;
+  entry.button_id = std::move(buttonId);
+  entry.module_id = std::move(moduleId);
+  entry.display_name = std::move(displayName);
+  entry.mod_id = std::move(modId);
+  entry.label = std::move(label);
+  entry.android_key_code = info->android_key_code;
+  entry.behavior = info->behavior;
+  entry.default_visible = info->default_visible;
+  entry.module_enabled = moduleEnabled;
+  entry.style = resolvedStyle;
+  entry.width_scale = resolvedWidthScale;
+  entry.height_scale = resolvedHeightScale;
+  entry.on_event = info->on_event;
+  g_registeredButtons.push_back(std::move(entry));
+  return true;
+}
+
+bool RegisterButton(const PLModMenu_ButtonInfo *info) {
+  return RegisterButtonInternal(info, nullptr, 0.0f, 0.0f);
+}
+
+bool RegisterButtonWithStyle(const PLModMenu_ButtonInfo *info,
+                             const PLModMenu_ButtonStyle *style) {
+  return RegisterButtonInternal(info, style, 0.0f, 0.0f);
+}
+
+bool RegisterButtonWithStyleV2(const PLModMenu_ButtonInfo *info,
+                               const PLModMenu_ButtonStyleV2 *style) {
+  if (!style)
+    return RegisterButtonInternal(info, nullptr, 0.0f, 0.0f);
+  return RegisterButtonInternal(info, &style->base, style->width_scale,
+                                style->height_scale);
+}
+
+void UnregisterButton(const char *button_id) {
+  if (!button_id)
+    return;
+
+  std::lock_guard<std::mutex> lock(g_modMenuMutex);
+  g_registeredButtons.erase(
+      std::remove_if(g_registeredButtons.begin(), g_registeredButtons.end(),
+                     [button_id](const RegisteredButton &button) {
+                       return button.button_id == button_id;
+                     }),
+      g_registeredButtons.end());
+}
+
 PLModMenu_Interface g_modMenuInterface = {
     .RegisterModule = RegisterModule,
     .UnregisterModule = UnregisterModule,
     .SetModuleEnabled = SetModuleEnabled,
     .SubmitDrawCommands = SubmitDrawCommands,
     .RegisterFont = RegisterFontInternal,
+    .RegisterButton = RegisterButton,
+    .UnregisterButton = UnregisterButton,
+    .RegisterButtonWithStyle = RegisterButtonWithStyle,
+    .RegisterButtonWithStyleV2 = RegisterButtonWithStyleV2,
 };
 
 } // namespace
@@ -323,6 +514,10 @@ void ToggleRegisteredModule(const char *module_id, bool enabled) {
         callback = mod.on_toggle;
         break;
       }
+    }
+    for (auto &button : g_registeredButtons) {
+      if (button.module_id == module_id)
+        button.module_enabled = enabled;
     }
   }
   if (callback)
@@ -365,6 +560,51 @@ void UnregisterModulesForModId(const std::string &modId) {
                        return m.mod_id == modId;
                      }),
       g_registeredModules.end());
+  g_registeredButtons.erase(
+      std::remove_if(g_registeredButtons.begin(), g_registeredButtons.end(),
+                     [&modId](const RegisteredButton &button) {
+                       return button.mod_id == modId;
+                     }),
+      g_registeredButtons.end());
+}
+
+int GetRegisteredButtonCount() {
+  std::lock_guard<std::mutex> lock(g_modMenuMutex);
+  return static_cast<int>(g_registeredButtons.size());
+}
+
+bool GetRegisteredButtonInfo(int index, RegisteredButton &out) {
+  std::lock_guard<std::mutex> lock(g_modMenuMutex);
+  if (index < 0 || index >= static_cast<int>(g_registeredButtons.size()))
+    return false;
+
+  out = g_registeredButtons[index];
+  for (const auto &mod : g_registeredModules) {
+    if (mod.module_id == out.module_id) {
+      out.module_enabled = mod.enabled;
+      break;
+    }
+  }
+  return true;
+}
+
+void DispatchRegisteredButtonEvent(const char *button_id,
+                                   PLModMenu_ButtonEvent event, float value) {
+  if (!button_id || !IsValidButtonEvent(event))
+    return;
+
+  PLModMenu_OnButtonEvent_Fn callback = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(g_modMenuMutex);
+    for (const auto &button : g_registeredButtons) {
+      if (button.button_id == button_id) {
+        callback = button.on_event;
+        break;
+      }
+    }
+  }
+  if (callback)
+    callback(button_id, event, value);
 }
 
 void GetDrawCommands(std::vector<InternalDrawCommand> &out) {
