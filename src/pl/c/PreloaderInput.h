@@ -41,6 +41,21 @@ JNIEXPORT void JNICALL Java_org_levimc_launcher_preloader_PreloaderInput_nativeS
 JNIEXPORT void JNICALL Java_org_levimc_launcher_preloader_PreloaderInput_nativeClearActivity(
     JNIEnv *env, jclass clazz);
 
+JNIEXPORT jboolean JNICALL Java_org_levimc_launcher_preloader_PreloaderInput_nativeIsPauseMenuOpen(
+    JNIEnv *env, jclass clazz);
+
+JNIEXPORT jboolean JNICALL Java_org_levimc_launcher_preloader_PreloaderInput_nativeIsHudScreenOpen(
+    JNIEnv *env, jclass clazz);
+
+JNIEXPORT jboolean JNICALL Java_org_levimc_launcher_preloader_PreloaderInput_nativeIsShowingMenu(
+    JNIEnv *env, jclass clazz);
+
+JNIEXPORT jboolean JNICALL Java_org_levimc_launcher_preloader_PreloaderInput_nativeShouldForceGlobalModMenu(
+    JNIEnv *env, jclass clazz);
+
+JNIEXPORT void JNICALL Java_org_levimc_launcher_preloader_PreloaderInput_nativeConfigureSignatureRules(
+    JNIEnv *env, jclass clazz, jstring rulesPath, jstring minecraftVersion);
+
 PLAPI PreloaderInput_Interface *GetPreloaderInput(void);
 
 #ifdef __cplusplus

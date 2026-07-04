@@ -11,7 +11,11 @@ set(PRELOADER_SOURCES
         src/pl/memory/Hook.cpp
         src/pl/memory/Patch.cpp
         src/pl/memory/Signature.cpp
+        src/pl/runtime/GameHookRules.cpp
+        src/pl/runtime/GameHooks.cpp
+        src/pl/runtime/ExternalModBridgeJni.cpp
         src/pl/runtime/InputBridge.cpp
+        src/pl/runtime/InputJni.cpp
         src/pl/runtime/JavaRuntime.cpp
         src/pl/runtime/ModMenuBridge.cpp
 )
