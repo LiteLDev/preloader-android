@@ -37,6 +37,13 @@ typedef enum PLModMenu_ButtonStylePreset {
   PL_BUTTON_STYLE_ACCENT = 1,
 } PLModMenu_ButtonStylePreset;
 
+typedef enum PLModMenu_ButtonIconFormat {
+  PL_BUTTON_ICON_AUTO = 0,
+  PL_BUTTON_ICON_PNG = 1,
+  PL_BUTTON_ICON_WEBP = 2,
+  PL_BUTTON_ICON_SVG = 3,
+} PLModMenu_ButtonIconFormat;
+
 typedef enum PLModMenu_ConfigType {
   PL_CONFIG_TOGGLE = 0,
   PL_CONFIG_SLIDER_INT,
@@ -78,22 +85,19 @@ typedef struct PLModMenu_ButtonInfo {
   PLModMenu_ButtonBehavior behavior;
   bool default_visible;
   PLModMenu_OnButtonEvent_Fn on_event;
-} PLModMenu_ButtonInfo;
-
-typedef struct PLModMenu_ButtonStyle {
   PLModMenu_ButtonStylePreset preset;
   uint32_t normal_bg_color;
   uint32_t active_bg_color;
   uint32_t border_color;
   uint32_t text_color;
   uint32_t active_text_color;
-} PLModMenu_ButtonStyle;
-
-typedef struct PLModMenu_ButtonStyleV2 {
-  PLModMenu_ButtonStyle base;
   float width_scale;
   float height_scale;
-} PLModMenu_ButtonStyleV2;
+  const unsigned char *icon_data;
+  int icon_data_size;
+  PLModMenu_ButtonIconFormat icon_format;
+  bool hide_label_when_icon_present;
+} PLModMenu_ButtonInfo;
 
 typedef enum PLModMenu_DrawCommandType {
   PL_DRAW_TEXT = 0,
@@ -122,10 +126,6 @@ typedef struct PLModMenu_Interface {
   bool (*RegisterFont)(const char *font_id, const unsigned char *ttf_data, int ttf_size);
   bool (*RegisterButton)(const PLModMenu_ButtonInfo *info);
   void (*UnregisterButton)(const char *button_id);
-  bool (*RegisterButtonWithStyle)(const PLModMenu_ButtonInfo *info,
-                                  const PLModMenu_ButtonStyle *style);
-  bool (*RegisterButtonWithStyleV2)(const PLModMenu_ButtonInfo *info,
-                                    const PLModMenu_ButtonStyleV2 *style);
 } PLModMenu_Interface;
 
 PLAPI PLModMenu_Interface *GetPreloaderModMenu(void);

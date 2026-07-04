@@ -52,9 +52,17 @@ struct RegisteredButton {
   PLModMenu_ButtonBehavior behavior;
   bool default_visible;
   bool module_enabled;
-  PLModMenu_ButtonStyle style;
+  PLModMenu_ButtonStylePreset style_preset;
+  uint32_t normal_bg_color;
+  uint32_t active_bg_color;
+  uint32_t border_color;
+  uint32_t text_color;
+  uint32_t active_text_color;
   float width_scale;
   float height_scale;
+  PLModMenu_ButtonIconFormat icon_format;
+  bool hide_label_when_icon_present;
+  std::vector<unsigned char> icon_data;
   PLModMenu_OnButtonEvent_Fn on_event;
 };
 
@@ -78,6 +86,8 @@ void UnregisterModulesForModId(const std::string &modId);
 
 int GetRegisteredButtonCount();
 bool GetRegisteredButtonInfo(int index, RegisteredButton &out);
+bool GetRegisteredButtonIconBytes(const char *button_id, int width, int height,
+                                  std::vector<unsigned char> &out);
 void DispatchRegisteredButtonEvent(const char *button_id,
                                    PLModMenu_ButtonEvent event, float value);
 

@@ -1,11 +1,14 @@
 #include "pl/runtime/ModMenuBridge.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <mutex>
 #include <utility>
 #include <vector>
+
+#include <lunasvg.h>
 
 #include "pl/Logger.h"
 
@@ -22,6 +25,9 @@ constexpr size_t kMaxDrawTextLength = 4096;
 constexpr int kMaxConfigCount = 128;
 constexpr int kMaxDrawCommandCount = 4096;
 constexpr int kMaxFontBytes = 8 * 1024 * 1024;
+constexpr int kMaxButtonIconBytes = 4 * 1024 * 1024;
+constexpr int kDefaultRenderedIconSize = 128;
+constexpr int kMaxRenderedIconSize = 512;
 constexpr float kMinButtonWidthScale = 0.6f;
 constexpr float kMaxButtonWidthScale = 4.0f;
 constexpr float kMinButtonHeightScale = 0.6f;
@@ -90,25 +96,85 @@ bool IsValidButtonStylePreset(PLModMenu_ButtonStylePreset preset) {
   return preset >= PL_BUTTON_STYLE_KEYCAP && preset <= PL_BUTTON_STYLE_ACCENT;
 }
 
-bool IsValidButtonEvent(PLModMenu_ButtonEvent event) {
-  return event >= PL_BUTTON_EVENT_CLICK && event <= PL_BUTTON_EVENT_SCROLL;
+bool IsValidButtonIconFormat(PLModMenu_ButtonIconFormat format) {
+  return format >= PL_BUTTON_ICON_AUTO && format <= PL_BUTTON_ICON_SVG;
 }
 
-PLModMenu_ButtonStyle DefaultButtonStyle() {
-  return {
-      .preset = PL_BUTTON_STYLE_KEYCAP,
-      .normal_bg_color = 0,
-      .active_bg_color = 0,
-      .border_color = 0,
-      .text_color = 0,
-      .active_text_color = 0,
-  };
+bool IsValidButtonEvent(PLModMenu_ButtonEvent event) {
+  return event >= PL_BUTTON_EVENT_CLICK && event <= PL_BUTTON_EVENT_SCROLL;
 }
 
 float NormalizeButtonScale(float value, float minValue, float maxValue) {
   if (!std::isfinite(value) || value <= 0.0f)
     return 0.0f;
   return std::clamp(value, minValue, maxValue);
+}
+
+PLModMenu_ButtonIconFormat
+InferButtonIconFormat(const std::vector<unsigned char> &data,
+                      PLModMenu_ButtonIconFormat declaredFormat) {
+  if (declaredFormat != PL_BUTTON_ICON_AUTO)
+    return declaredFormat;
+  static constexpr unsigned char kPngSignature[] = {0x89, 'P', 'N', 'G',
+                                                    0x0D, 0x0A, 0x1A, 0x0A};
+  if (data.size() >= sizeof(kPngSignature) &&
+      std::memcmp(data.data(), kPngSignature, sizeof(kPngSignature)) == 0) {
+    return PL_BUTTON_ICON_PNG;
+  }
+  if (data.size() >= 12 &&
+      std::memcmp(data.data(), "RIFF", 4) == 0 &&
+      std::memcmp(data.data() + 8, "WEBP", 4) == 0) {
+    return PL_BUTTON_ICON_WEBP;
+  }
+
+  size_t offset = 0;
+  while (offset < data.size() &&
+         std::isspace(static_cast<unsigned char>(data[offset]))) {
+    ++offset;
+  }
+  if (offset < data.size() && data[offset] == '<') {
+    return PL_BUTTON_ICON_SVG;
+  }
+  return PL_BUTTON_ICON_AUTO;
+}
+
+int NormalizeRenderedIconSize(int value) {
+  if (value <= 0)
+    return kDefaultRenderedIconSize;
+  return std::clamp(value, 1, kMaxRenderedIconSize);
+}
+
+void AppendPngBytes(void *closure, void *data, int size) {
+  if (!closure || !data || size <= 0)
+    return;
+  auto *out = static_cast<std::vector<unsigned char> *>(closure);
+  const auto *bytes = static_cast<const unsigned char *>(data);
+  out->insert(out->end(), bytes, bytes + size);
+}
+
+bool RenderSvgIconToPng(const std::vector<unsigned char> &svgData, int width,
+                        int height, std::vector<unsigned char> &out) {
+  auto document = lunasvg::Document::loadFromData(
+      reinterpret_cast<const char *>(svgData.data()), svgData.size());
+  if (!document) {
+    preloader_logger.error("Failed to parse registered SVG button icon");
+    return false;
+  }
+
+  lunasvg::Bitmap bitmap = document->renderToBitmap(
+      NormalizeRenderedIconSize(width), NormalizeRenderedIconSize(height),
+      0x00000000);
+  if (bitmap.isNull()) {
+    preloader_logger.error("Failed to render registered SVG button icon");
+    return false;
+  }
+
+  out.clear();
+  if (!bitmap.writeToPng(AppendPngBytes, &out)) {
+    preloader_logger.error("Failed to encode registered SVG button icon");
+    return false;
+  }
+  return !out.empty();
 }
 
 bool HasFiniteDrawGeometry(const PLModMenu_DrawCommand &command) {
@@ -328,29 +394,43 @@ void SubmitDrawCommands(const char *module_id,
   }
 }
 
-bool RegisterButtonInternal(const PLModMenu_ButtonInfo *info,
-                            const PLModMenu_ButtonStyle *style,
-                            float widthScale, float heightScale) {
+bool RegisterButton(const PLModMenu_ButtonInfo *info) {
   if (!info) {
     preloader_logger.error("Mod Menu button registration received null info");
     return false;
   }
 
-  PLModMenu_ButtonStyle resolvedStyle = DefaultButtonStyle();
-  if (style) {
-    if (!IsValidButtonStylePreset(style->preset)) {
-      preloader_logger.error(
-          "Rejected Mod Menu button: invalid style preset {}",
-          static_cast<int>(style->preset));
+  PLModMenu_ButtonStylePreset stylePreset = info->preset;
+  if (!IsValidButtonStylePreset(stylePreset)) {
+    preloader_logger.error("Rejected Mod Menu button: invalid style preset {}",
+                           static_cast<int>(stylePreset));
+    return false;
+  }
+
+  if (!IsValidButtonIconFormat(info->icon_format)) {
+    preloader_logger.error("Rejected Mod Menu button: invalid icon format {}",
+                           static_cast<int>(info->icon_format));
+    return false;
+  }
+
+  std::vector<unsigned char> iconData;
+  if (info->icon_data_size > 0) {
+    if (!info->icon_data || info->icon_data_size > kMaxButtonIconBytes) {
+      preloader_logger.error("Rejected Mod Menu button: invalid icon size {}",
+                             info->icon_data_size);
       return false;
     }
-    resolvedStyle = *style;
+    iconData.assign(info->icon_data, info->icon_data + info->icon_data_size);
+  } else if (info->icon_data_size < 0) {
+    preloader_logger.error("Rejected Mod Menu button: invalid icon size {}",
+                           info->icon_data_size);
+    return false;
   }
-  const float resolvedWidthScale =
-      NormalizeButtonScale(widthScale, kMinButtonWidthScale,
-                           kMaxButtonWidthScale);
+
+  const float resolvedWidthScale = NormalizeButtonScale(
+      info->width_scale, kMinButtonWidthScale, kMaxButtonWidthScale);
   const float resolvedHeightScale =
-      NormalizeButtonScale(heightScale, kMinButtonHeightScale,
+      NormalizeButtonScale(info->height_scale, kMinButtonHeightScale,
                            kMaxButtonHeightScale);
 
   std::string buttonId;
@@ -426,29 +506,20 @@ bool RegisterButtonInternal(const PLModMenu_ButtonInfo *info,
   entry.behavior = info->behavior;
   entry.default_visible = info->default_visible;
   entry.module_enabled = moduleEnabled;
-  entry.style = resolvedStyle;
+  entry.style_preset = stylePreset;
+  entry.normal_bg_color = info->normal_bg_color;
+  entry.active_bg_color = info->active_bg_color;
+  entry.border_color = info->border_color;
+  entry.text_color = info->text_color;
+  entry.active_text_color = info->active_text_color;
   entry.width_scale = resolvedWidthScale;
   entry.height_scale = resolvedHeightScale;
+  entry.icon_format = InferButtonIconFormat(iconData, info->icon_format);
+  entry.hide_label_when_icon_present = info->hide_label_when_icon_present;
+  entry.icon_data = std::move(iconData);
   entry.on_event = info->on_event;
   g_registeredButtons.push_back(std::move(entry));
   return true;
-}
-
-bool RegisterButton(const PLModMenu_ButtonInfo *info) {
-  return RegisterButtonInternal(info, nullptr, 0.0f, 0.0f);
-}
-
-bool RegisterButtonWithStyle(const PLModMenu_ButtonInfo *info,
-                             const PLModMenu_ButtonStyle *style) {
-  return RegisterButtonInternal(info, style, 0.0f, 0.0f);
-}
-
-bool RegisterButtonWithStyleV2(const PLModMenu_ButtonInfo *info,
-                               const PLModMenu_ButtonStyleV2 *style) {
-  if (!style)
-    return RegisterButtonInternal(info, nullptr, 0.0f, 0.0f);
-  return RegisterButtonInternal(info, &style->base, style->width_scale,
-                                style->height_scale);
 }
 
 void UnregisterButton(const char *button_id) {
@@ -472,8 +543,6 @@ PLModMenu_Interface g_modMenuInterface = {
     .RegisterFont = RegisterFontInternal,
     .RegisterButton = RegisterButton,
     .UnregisterButton = UnregisterButton,
-    .RegisterButtonWithStyle = RegisterButtonWithStyle,
-    .RegisterButtonWithStyleV2 = RegisterButtonWithStyleV2,
 };
 
 } // namespace
@@ -586,6 +655,36 @@ bool GetRegisteredButtonInfo(int index, RegisteredButton &out) {
     }
   }
   return true;
+}
+
+bool GetRegisteredButtonIconBytes(const char *button_id, int width, int height,
+                                  std::vector<unsigned char> &out) {
+  if (!button_id)
+    return false;
+
+  std::vector<unsigned char> iconData;
+  PLModMenu_ButtonIconFormat iconFormat = PL_BUTTON_ICON_AUTO;
+  {
+    std::lock_guard<std::mutex> lock(g_modMenuMutex);
+    for (const auto &button : g_registeredButtons) {
+      if (button.button_id == button_id) {
+        iconData = button.icon_data;
+        iconFormat = button.icon_format;
+        break;
+      }
+    }
+  }
+
+  if (iconData.empty())
+    return false;
+
+  iconFormat = InferButtonIconFormat(iconData, iconFormat);
+  if (iconFormat == PL_BUTTON_ICON_SVG) {
+    return RenderSvgIconToPng(iconData, width, height, out);
+  }
+
+  out = std::move(iconData);
+  return !out.empty();
 }
 
 void DispatchRegisteredButtonEvent(const char *button_id,

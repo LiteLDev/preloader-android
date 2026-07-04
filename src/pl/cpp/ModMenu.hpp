@@ -168,36 +168,61 @@ public:
   }
 
   ButtonBuilder &stylePreset(PLModMenu_ButtonStylePreset value) {
-    buttonStyle.preset = value;
-    styleConfigured = true;
+    buttonStylePreset = value;
     return *this;
   }
 
   ButtonBuilder &styleColors(uint32_t normalBgColor, uint32_t activeBgColor,
                              uint32_t borderColor = 0) {
-    buttonStyle.normal_bg_color = normalBgColor;
-    buttonStyle.active_bg_color = activeBgColor;
-    buttonStyle.border_color = borderColor;
-    styleConfigured = true;
+    normalBgColorValue = normalBgColor;
+    activeBgColorValue = activeBgColor;
+    borderColorValue = borderColor;
     return *this;
   }
 
   ButtonBuilder &textColor(uint32_t value) {
-    buttonStyle.text_color = value;
-    styleConfigured = true;
+    textColorValue = value;
     return *this;
   }
 
   ButtonBuilder &activeTextColor(uint32_t value) {
-    buttonStyle.active_text_color = value;
-    styleConfigured = true;
+    activeTextColorValue = value;
     return *this;
   }
 
   ButtonBuilder &sizeScale(float width, float height = 1.0f) {
     widthScale = width;
     heightScale = height;
-    sizeConfigured = true;
+    return *this;
+  }
+
+  ButtonBuilder &icon(PLModMenu_ButtonIconFormat format,
+                      const unsigned char *data, int size,
+                      bool hideLabelWhenPresent = true) {
+    iconFormat = format;
+    hideLabelWhenIconPresent = hideLabelWhenPresent;
+    iconBytes.clear();
+    if (data && size > 0) {
+      iconBytes.assign(data, data + size);
+    }
+    return *this;
+  }
+
+  ButtonBuilder &pngIcon(const unsigned char *data, int size,
+                         bool hideLabelWhenPresent = true) {
+    return icon(PL_BUTTON_ICON_PNG, data, size, hideLabelWhenPresent);
+  }
+
+  ButtonBuilder &webpIcon(const unsigned char *data, int size,
+                          bool hideLabelWhenPresent = true) {
+    return icon(PL_BUTTON_ICON_WEBP, data, size, hideLabelWhenPresent);
+  }
+
+  ButtonBuilder &svgIcon(std::string svg,
+                         bool hideLabelWhenPresent = true) {
+    iconFormat = PL_BUTTON_ICON_SVG;
+    hideLabelWhenIconPresent = hideLabelWhenPresent;
+    iconBytes.assign(svg.begin(), svg.end());
     return *this;
   }
 
@@ -228,18 +253,19 @@ public:
         .behavior = buttonBehavior,
         .default_visible = visibleByDefault,
         .on_event = eventCallback,
+        .preset = buttonStylePreset,
+        .normal_bg_color = normalBgColorValue,
+        .active_bg_color = activeBgColorValue,
+        .border_color = borderColorValue,
+        .text_color = textColorValue,
+        .active_text_color = activeTextColorValue,
+        .width_scale = widthScale,
+        .height_scale = heightScale,
+        .icon_data = iconBytes.empty() ? nullptr : iconBytes.data(),
+        .icon_data_size = static_cast<int>(iconBytes.size()),
+        .icon_format = iconFormat,
+        .hide_label_when_icon_present = hideLabelWhenIconPresent,
     };
-    if ((styleConfigured || sizeConfigured) && menu->RegisterButtonWithStyleV2) {
-      PLModMenu_ButtonStyleV2 style{
-          .base = buttonStyle,
-          .width_scale = sizeConfigured ? widthScale : 0.0f,
-          .height_scale = sizeConfigured ? heightScale : 0.0f,
-      };
-      return menu->RegisterButtonWithStyleV2(&info, &style);
-    }
-    if (styleConfigured && menu->RegisterButtonWithStyle) {
-      return menu->RegisterButtonWithStyle(&info, &buttonStyle);
-    }
     return menu->RegisterButton(&info);
   }
 
@@ -252,18 +278,17 @@ private:
   int keyCode{};
   PLModMenu_ButtonBehavior buttonBehavior{PL_BUTTON_CLICK};
   bool visibleByDefault{true};
-  bool styleConfigured{};
-  bool sizeConfigured{};
   float widthScale{};
   float heightScale{1.0f};
-  PLModMenu_ButtonStyle buttonStyle{
-      .preset = PL_BUTTON_STYLE_KEYCAP,
-      .normal_bg_color = 0,
-      .active_bg_color = 0,
-      .border_color = 0,
-      .text_color = 0,
-      .active_text_color = 0,
-  };
+  PLModMenu_ButtonStylePreset buttonStylePreset{PL_BUTTON_STYLE_KEYCAP};
+  uint32_t normalBgColorValue{};
+  uint32_t activeBgColorValue{};
+  uint32_t borderColorValue{};
+  uint32_t textColorValue{};
+  uint32_t activeTextColorValue{};
+  PLModMenu_ButtonIconFormat iconFormat{PL_BUTTON_ICON_AUTO};
+  bool hideLabelWhenIconPresent{true};
+  std::vector<unsigned char> iconBytes;
   PLModMenu_OnButtonEvent_Fn eventCallback{};
 };
 

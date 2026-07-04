@@ -43,7 +43,18 @@ FetchContent_Declare(
         GIT_REPOSITORY https://github.com/Neargye/magic_enum.git
         GIT_TAG v0.9.7
 )
-FetchContent_MakeAvailable(nlohmann_json boost_pfr magic_enum)
+FetchContent_Declare(
+        lunasvg
+        GIT_REPOSITORY https://github.com/sammycage/lunasvg.git
+        GIT_TAG v3.5.0
+)
+set(LUNASVG_BUILD_EXAMPLES OFF CACHE BOOL "Disable lunasvg examples" FORCE)
+set(LUNASVG_DISABLE_LOAD_SYSTEM_FONTS ON CACHE BOOL "Disable lunasvg system font scan" FORCE)
+
+set(_preloader_build_shared_libs ${BUILD_SHARED_LIBS})
+set(BUILD_SHARED_LIBS OFF)
+FetchContent_MakeAvailable(nlohmann_json boost_pfr magic_enum lunasvg)
+set(BUILD_SHARED_LIBS ${_preloader_build_shared_libs})
 
 find_library(log-lib log)
 find_library(android-lib android)
@@ -68,6 +79,7 @@ target_link_libraries(preloader
         nlohmann_json::nlohmann_json
         Boost::pfr
         magic_enum::magic_enum
+        lunasvg::lunasvg
 )
 
 install(TARGETS preloader

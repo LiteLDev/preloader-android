@@ -119,18 +119,65 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetExternalBu
       {"behavior", static_cast<int>(button.behavior)},
       {"default_visible", button.default_visible},
       {"module_enabled", button.module_enabled},
+      {"has_icon", !button.icon_data.empty()},
+      {"icon_format", static_cast<int>(button.icon_format)},
+      {"hide_label_when_icon_present", button.hide_label_when_icon_present},
       {"style",
-       {{"preset", static_cast<int>(button.style.preset)},
-        {"normal_bg_color", button.style.normal_bg_color},
-        {"active_bg_color", button.style.active_bg_color},
-        {"border_color", button.style.border_color},
-        {"text_color", button.style.text_color},
-        {"active_text_color", button.style.active_text_color},
+       {{"preset", static_cast<int>(button.style_preset)},
+        {"normal_bg_color", button.normal_bg_color},
+        {"active_bg_color", button.active_bg_color},
+        {"border_color", button.border_color},
+        {"text_color", button.text_color},
+        {"active_text_color", button.active_text_color},
         {"width_scale", button.width_scale},
         {"height_scale", button.height_scale}}},
   };
   const std::string json = payload.dump();
   return env->NewStringUTF(json.c_str());
+}
+
+JNIEXPORT jbyteArray JNICALL
+Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetExternalButtonIconBytes(
+    JNIEnv *env, jclass clazz, jstring buttonId, jint width, jint height) {
+  (void)clazz;
+  if (!buttonId) {
+    return nullptr;
+  }
+
+  const char *id = env->GetStringUTFChars(buttonId, nullptr);
+  if (!id) {
+    return nullptr;
+  }
+
+  std::vector<unsigned char> iconData;
+  const bool found =
+      pl::runtime::GetRegisteredButtonIconBytes(id, width, height, iconData);
+  env->ReleaseStringUTFChars(buttonId, id);
+
+  if (!found || iconData.empty()) {
+    return nullptr;
+  }
+
+  const size_t maxArrayLength =
+      static_cast<size_t>(std::numeric_limits<jsize>::max());
+  if (iconData.size() > maxArrayLength) {
+    preloader_logger.error("Registered button icon is too large to marshal to "
+                           "Java: {}",
+                           iconData.size());
+    return nullptr;
+  }
+
+  const jsize byteCount = static_cast<jsize>(iconData.size());
+  jbyteArray result = env->NewByteArray(byteCount);
+  if (!result) {
+    return nullptr;
+  }
+  env->SetByteArrayRegion(result, 0, byteCount,
+                          reinterpret_cast<const jbyte *>(iconData.data()));
+  if (env->ExceptionCheck()) {
+    return nullptr;
+  }
+  return result;
 }
 
 JNIEXPORT void JNICALL
