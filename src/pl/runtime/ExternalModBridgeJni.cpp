@@ -204,7 +204,7 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetDrawComman
   pl::runtime::GetDrawCommands(cmds);
 
   constexpr size_t kRectFieldsPerCommand = 6;
-  constexpr jsize kResultFieldCount = 7;
+  constexpr jsize kResultFieldCount = 8;
   const size_t commandCount = cmds.size();
   const size_t maxArrayLength =
       static_cast<size_t>(std::numeric_limits<jsize>::max());
@@ -236,6 +236,7 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetDrawComman
   jobjectArray textsArray = env->NewObjectArray(n, stringClass, nullptr);
   jobjectArray modulesArray = env->NewObjectArray(n, stringClass, nullptr);
   jobjectArray fontsArray = env->NewObjectArray(n, stringClass, nullptr);
+  jobjectArray imagesArray = env->NewObjectArray(n, stringClass, nullptr);
 
   auto cleanupRefs = [&] {
     if (typesArray) {
@@ -259,12 +260,15 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetDrawComman
     if (fontsArray) {
       env->DeleteLocalRef(fontsArray);
     }
+    if (imagesArray) {
+      env->DeleteLocalRef(imagesArray);
+    }
     env->DeleteLocalRef(objectClass);
     env->DeleteLocalRef(stringClass);
   };
 
   if (!typesArray || !rectsArray || !colorsArray || !sizesArray ||
-      !textsArray || !modulesArray || !fontsArray) {
+      !textsArray || !modulesArray || !fontsArray || !imagesArray) {
     cleanupRefs();
     return nullptr;
   }
@@ -302,7 +306,8 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetDrawComman
       const jsize index = static_cast<jsize>(i);
       if (!setStringElement(textsArray, index, cmds[i].text) ||
           !setStringElement(modulesArray, index, cmds[i].module_id) ||
-          !setStringElement(fontsArray, index, cmds[i].font_id)) {
+          !setStringElement(fontsArray, index, cmds[i].font_id) ||
+          !setStringElement(imagesArray, index, cmds[i].image_id)) {
         cleanupRefs();
         return nullptr;
       }
@@ -331,6 +336,7 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetDrawComman
   env->SetObjectArrayElement(result, 4, textsArray);
   env->SetObjectArrayElement(result, 5, modulesArray);
   env->SetObjectArrayElement(result, 6, fontsArray);
+  env->SetObjectArrayElement(result, 7, imagesArray);
 
   if (env->ExceptionCheck()) {
     env->DeleteLocalRef(result);
@@ -379,6 +385,88 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetRegistered
   env->SetByteArrayRegion(result, 0, byteCount,
                           reinterpret_cast<const jbyte *>(fontData.data()));
   if (env->ExceptionCheck()) {
+    return nullptr;
+  }
+  return result;
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetRegisteredImage(
+    JNIEnv *env, jclass clazz, jstring imageId) {
+  (void)clazz;
+  if (!imageId) {
+    return nullptr;
+  }
+  const char *idStr = env->GetStringUTFChars(imageId, nullptr);
+  if (!idStr) {
+    return nullptr;
+  }
+
+  std::vector<unsigned char> imageData;
+  int width = 0;
+  int height = 0;
+  const bool found =
+      pl::runtime::GetRegisteredImageBytes(idStr, imageData, width, height);
+  env->ReleaseStringUTFChars(imageId, idStr);
+
+  if (!found || imageData.empty() || width <= 0 || height <= 0) {
+    return nullptr;
+  }
+
+  const size_t maxArrayLength =
+      static_cast<size_t>(std::numeric_limits<jsize>::max());
+  if (imageData.size() > maxArrayLength) {
+    preloaderLogger.error("Registered image is too large to marshal to Java: {}",
+                          imageData.size());
+    return nullptr;
+  }
+
+  jclass objectClass = env->FindClass("java/lang/Object");
+  if (!objectClass) {
+    return nullptr;
+  }
+  jobjectArray result = env->NewObjectArray(2, objectClass, nullptr);
+  env->DeleteLocalRef(objectClass);
+  if (!result) {
+    return nullptr;
+  }
+
+  const jsize byteCount = static_cast<jsize>(imageData.size());
+  jbyteArray bytesArray = env->NewByteArray(byteCount);
+  if (!bytesArray) {
+    env->DeleteLocalRef(result);
+    return nullptr;
+  }
+  env->SetByteArrayRegion(bytesArray, 0, byteCount,
+                          reinterpret_cast<const jbyte *>(imageData.data()));
+  if (env->ExceptionCheck()) {
+    env->DeleteLocalRef(bytesArray);
+    env->DeleteLocalRef(result);
+    return nullptr;
+  }
+
+  jintArray dimensionsArray = env->NewIntArray(2);
+  if (!dimensionsArray) {
+    env->DeleteLocalRef(bytesArray);
+    env->DeleteLocalRef(result);
+    return nullptr;
+  }
+  const jint dimensions[] = {static_cast<jint>(width),
+                             static_cast<jint>(height)};
+  env->SetIntArrayRegion(dimensionsArray, 0, 2, dimensions);
+  if (env->ExceptionCheck()) {
+    env->DeleteLocalRef(dimensionsArray);
+    env->DeleteLocalRef(bytesArray);
+    env->DeleteLocalRef(result);
+    return nullptr;
+  }
+
+  env->SetObjectArrayElement(result, 0, bytesArray);
+  env->SetObjectArrayElement(result, 1, dimensionsArray);
+  env->DeleteLocalRef(dimensionsArray);
+  env->DeleteLocalRef(bytesArray);
+  if (env->ExceptionCheck()) {
+    env->DeleteLocalRef(result);
     return nullptr;
   }
   return result;

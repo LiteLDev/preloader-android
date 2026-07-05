@@ -61,6 +61,14 @@ struct RegisteredFont {
 };
 std::vector<RegisteredFont> g_registeredFonts;
 
+struct RegisteredImage {
+  std::string image_id;
+  std::vector<unsigned char> data;
+  int width;
+  int height;
+};
+std::vector<RegisteredImage> g_registeredImages;
+
 std::string CurrentOwnerModId() {
   if (g_currentOwnerModIds.empty())
     return {};
@@ -191,6 +199,8 @@ ToLegacyDrawCommandType(pl::modmenu::DrawCommandType type) {
     return PL_DRAW_CIRCLE_FILLED;
   case pl::modmenu::DrawCommandType::TriangleFilled:
     return PL_DRAW_TRIANGLE_FILLED;
+  case pl::modmenu::DrawCommandType::Image:
+    return PL_DRAW_IMAGE;
   }
   return PL_DRAW_TEXT;
 }
@@ -316,7 +326,9 @@ bool ValidateDrawCommands(const char *module_id,
     if (!ReadOptionalString(commands[i].text, kMaxDrawTextLength,
                             "draw command text", unused) ||
         !ReadOptionalString(commands[i].font_id, kMaxModuleIdLength,
-                            "draw command font_id", unused)) {
+                            "draw command font_id", unused) ||
+        !ReadOptionalString(commands[i].image_id, kMaxModuleIdLength,
+                            "draw command image_id", unused)) {
       preloaderLogger.error("Rejected draw command {} for {}", i, module_id);
       return false;
     }
@@ -503,6 +515,9 @@ void SubmitDrawCommands(const char *module_id,
           }
           if (commands[i].font_id) {
             icmd.font_id = commands[i].font_id;
+          }
+          if (commands[i].image_id) {
+            icmd.image_id = commands[i].image_id;
           }
           mod.draw_commands.push_back(std::move(icmd));
         }
@@ -921,15 +936,55 @@ bool GetRegisteredFontBytes(const char *font_id,
 
 bool RegisterImageInternal(const char *image_id, const unsigned char *image_data,
                            int width, int height) {
-  if (width <= 0 || height <= 0 || !image_data) return false;
-  int size = width * height * 4;
-  return RegisterFontInternal(image_id, image_data, size);
+  std::string imageId;
+  if (!ReadRequiredString(image_id, kMaxModuleIdLength, "image_id", imageId) ||
+      width <= 0 || height <= 0 || !image_data) {
+    return false;
+  }
+
+  const auto imageWidth = static_cast<size_t>(width);
+  const auto imageHeight = static_cast<size_t>(height);
+  const auto maxInt = static_cast<size_t>(std::numeric_limits<int>::max());
+  if (imageWidth > maxInt / imageHeight) {
+    return false;
+  }
+  const size_t pixelCount = imageWidth * imageHeight;
+  if (pixelCount > maxInt / 4) {
+    return false;
+  }
+
+  const size_t byteCount = pixelCount * 4;
+  std::lock_guard<std::mutex> lock(g_modMenuMutex);
+  for (const auto &image : g_registeredImages) {
+    if (image.image_id == imageId) {
+      return false;
+    }
+  }
+
+  RegisteredImage image;
+  image.image_id = std::move(imageId);
+  image.data.assign(image_data, image_data + byteCount);
+  image.width = width;
+  image.height = height;
+  g_registeredImages.push_back(std::move(image));
+  return true;
 }
 
 bool GetRegisteredImageBytes(const char *image_id,
                              std::vector<unsigned char> &out, int &width, int &height) {
-  // Not used natively but declared in header
-  return GetRegisteredFontBytes(image_id, out);
+  if (!image_id) {
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(g_modMenuMutex);
+  for (const auto &image : g_registeredImages) {
+    if (image.image_id == image_id) {
+      out = image.data;
+      width = image.width;
+      height = image.height;
+      return true;
+    }
+  }
+  return false;
 }
 
 bool RegisterCppModule(const pl::modmenu::ModuleInfo &info) {
@@ -1044,6 +1099,8 @@ void SubmitCppDrawCommands(std::string_view moduleId,
         .size = command.size,
         .text = command.text.empty() ? nullptr : command.text.c_str(),
         .font_id = command.fontId.empty() ? nullptr : command.fontId.c_str(),
+        .image_id =
+            command.imageId.empty() ? nullptr : command.imageId.c_str(),
     });
   }
 
@@ -1061,6 +1118,34 @@ bool RegisterCppFont(std::string_view fontId,
   const std::string fontIdString(fontId);
   return RegisterFontInternal(fontIdString.c_str(), ttfData.data(),
                               static_cast<int>(ttfData.size()));
+}
+
+bool RegisterCppImage(std::string_view imageId,
+                      std::span<const unsigned char> imageData, int width,
+                      int height) {
+  if (width <= 0 || height <= 0) {
+    return false;
+  }
+
+  const auto imageWidth = static_cast<size_t>(width);
+  const auto imageHeight = static_cast<size_t>(height);
+  const auto maxInt = static_cast<size_t>(std::numeric_limits<int>::max());
+  if (imageWidth > maxInt / imageHeight) {
+    return false;
+  }
+  const size_t pixelCount = imageWidth * imageHeight;
+  if (pixelCount > maxInt / 4) {
+    return false;
+  }
+
+  const size_t byteCount = pixelCount * 4;
+  if (imageData.size() != byteCount) {
+    return false;
+  }
+
+  const std::string imageIdString(imageId);
+  return RegisterImageInternal(imageIdString.c_str(), imageData.data(), width,
+                               height);
 }
 
 } // namespace pl::runtime
@@ -1090,6 +1175,12 @@ void submitDrawCommands(std::string_view moduleId,
 bool registerFont(std::string_view fontId,
                   std::span<const unsigned char> ttfData) {
   return pl::runtime::RegisterCppFont(fontId, ttfData);
+}
+
+bool registerImage(std::string_view imageId,
+                   std::span<const unsigned char> imageData, int width,
+                   int height) {
+  return pl::runtime::RegisterCppImage(imageId, imageData, width, height);
 }
 
 bool registerButton(const ButtonInfo &info) {

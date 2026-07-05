@@ -76,6 +76,7 @@ enum class DrawCommandType {
   RectFilled,
   CircleFilled,
   TriangleFilled,
+  Image,
 };
 
 /**
@@ -150,6 +151,7 @@ struct DrawCommand {
   float size{};
   std::string text;
   std::string fontId;
+  std::string imageId;
 };
 
 /**
@@ -178,6 +180,13 @@ PL_EXPORT void submitDrawCommands(std::string_view moduleId,
  */
 PL_EXPORT bool registerFont(std::string_view fontId,
                             std::span<const unsigned char> ttfData);
+
+/**
+ * @brief Registers raw RGBA image pixels for overlay image rendering.
+ */
+PL_EXPORT bool registerImage(std::string_view imageId,
+                             std::span<const unsigned char> imageData,
+                             int width, int height);
 
 /**
  * @brief Registers an on-screen button.

@@ -117,6 +117,7 @@ typedef struct PLModMenu_DrawCommand {
   float size;
   const char *text;
   const char *font_id;
+  const char *image_id;
 } PLModMenu_DrawCommand;
 
 typedef struct PLModMenu_Interface {

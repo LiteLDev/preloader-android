@@ -16,6 +16,7 @@ struct InternalDrawCommand {
   float size;
   std::string text;
   std::string font_id;
+  std::string image_id;
 };
 
 struct RegisteredModule {
