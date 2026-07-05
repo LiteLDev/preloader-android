@@ -1,15 +1,17 @@
 #pragma once
 
-#include "pl/runtime/ModMenuTypes.h"
+#include "pl/ModMenu.hpp"
 
+#include <functional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace pl::runtime {
 
 struct InternalDrawCommand {
   std::string module_id;
-  PLModMenu_DrawCommandType type;
+  pl::modmenu::DrawCommandType type;
   float x, y, w, h;
   float x3, y3;
   uint32_t color;
@@ -26,13 +28,15 @@ struct RegisteredModule {
   std::string mod_id;
   bool enabled;
   bool hide_in_hud_editor;
-  PLModMenu_OnToggle_Fn on_toggle;
-  PLModMenu_OnConfigChanged_Fn on_config_changed;
+  std::function<void(std::string_view moduleId, bool enabled)> on_toggle;
+  std::function<void(std::string_view moduleId, std::string_view key,
+                     std::string_view value)>
+      on_config_changed;
 
   struct ConfigEntry {
     std::string key;
     std::string display_name;
-    PLModMenu_ConfigType type;
+    pl::modmenu::ConfigType type;
     std::string default_value;
     std::string min_value;
     std::string max_value;
@@ -50,10 +54,10 @@ struct RegisteredButton {
   std::string mod_id;
   std::string label;
   int android_key_code;
-  PLModMenu_ButtonBehavior behavior;
+  pl::modmenu::ButtonBehavior behavior;
   bool default_visible;
   bool module_enabled;
-  PLModMenu_ButtonStylePreset style_preset;
+  pl::modmenu::ButtonStylePreset style_preset;
   uint32_t normal_bg_color;
   uint32_t active_bg_color;
   uint32_t border_color;
@@ -61,13 +65,13 @@ struct RegisteredButton {
   uint32_t active_text_color;
   float width_scale;
   float height_scale;
-  PLModMenu_ButtonIconFormat icon_format;
+  pl::modmenu::ButtonIconFormat icon_format;
   bool hide_label_when_icon_present;
   std::vector<unsigned char> icon_data;
-  PLModMenu_OnButtonEvent_Fn on_event;
+  std::function<void(std::string_view buttonId, pl::modmenu::ButtonEvent event,
+                     float value)>
+      on_event;
 };
-
-PLModMenu_Interface *GetModMenuInterface();
 
 class ScopedModMenuOwner {
 public:
@@ -90,7 +94,7 @@ bool GetRegisteredButtonInfo(int index, RegisteredButton &out);
 bool GetRegisteredButtonIconBytes(const char *button_id, int width, int height,
                                   std::vector<unsigned char> &out);
 void DispatchRegisteredButtonEvent(const char *button_id,
-                                   PLModMenu_ButtonEvent event, float value);
+                                   pl::modmenu::ButtonEvent event, float value);
 
 void GetDrawCommands(std::vector<InternalDrawCommand> &out);
 

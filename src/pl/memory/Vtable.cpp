@@ -5,7 +5,7 @@
 #include <mutex>
 #include <string>
 
-#include "pl/legacy/Gloss.h"
+#include "pl/Gloss.h"
 
 namespace pl::memory {
 namespace {
@@ -55,8 +55,7 @@ uintptr_t findBytes(uintptr_t base, size_t size, const void *pattern,
 }
 
 bool canReadPointer(size_t sectionSize, size_t offset) {
-  return offset <= sectionSize &&
-         sectionSize - offset >= sizeof(uintptr_t);
+  return offset <= sectionSize && sectionSize - offset >= sizeof(uintptr_t);
 }
 
 uintptr_t readPointer(uintptr_t base, size_t offset) {
@@ -72,8 +71,8 @@ uintptr_t findTypeInfo(uintptr_t dataRelRo, size_t dataRelRoSize,
     return 0;
   }
 
-  for (size_t offset = sizeof(uintptr_t);
-       canReadPointer(dataRelRoSize, offset); offset += sizeof(uintptr_t)) {
+  for (size_t offset = sizeof(uintptr_t); canReadPointer(dataRelRoSize, offset);
+       offset += sizeof(uintptr_t)) {
     if (readPointer(dataRelRo, offset) == typeName) {
       return dataRelRo + offset - sizeof(uintptr_t);
     }
@@ -100,8 +99,7 @@ uintptr_t readVtableSlot(uintptr_t dataRelRo, size_t dataRelRoSize,
                          size_t typeInfoPointerOffset, size_t slot) {
   const size_t addressPointOffset = typeInfoPointerOffset + sizeof(uintptr_t);
   size_t slotOffset = 0;
-  if (!checkedSlotOffset(addressPointOffset, slot, dataRelRoSize,
-                         slotOffset)) {
+  if (!checkedSlotOffset(addressPointOffset, slot, dataRelRoSize, slotOffset)) {
     return 0;
   }
   return readPointer(dataRelRo, slotOffset);
@@ -113,8 +111,8 @@ uintptr_t findPrimaryVtableSlot(uintptr_t dataRelRo, size_t dataRelRoSize,
     return 0;
   }
 
-  for (size_t offset = sizeof(uintptr_t);
-       canReadPointer(dataRelRoSize, offset); offset += sizeof(uintptr_t)) {
+  for (size_t offset = sizeof(uintptr_t); canReadPointer(dataRelRoSize, offset);
+       offset += sizeof(uintptr_t)) {
     if (readPointer(dataRelRo, offset) != typeInfo) {
       continue;
     }
@@ -172,8 +170,7 @@ uintptr_t resolveVtableFunction(std::string_view typeInfoName, size_t slot,
     return 0;
   }
 
-  const uintptr_t typeInfo =
-      findTypeInfo(dataRelRo, dataRelRoSize, typeName);
+  const uintptr_t typeInfo = findTypeInfo(dataRelRo, dataRelRoSize, typeName);
   if (!typeInfo) {
     return 0;
   }

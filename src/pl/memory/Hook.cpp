@@ -3,7 +3,7 @@
 #include <set>
 #include <unordered_map>
 
-#include "pl/legacy/Gloss.h"
+#include "pl/Gloss.h"
 #include "pl/memory/Hook.hpp"
 
 namespace pl::memory {
@@ -88,8 +88,8 @@ int hook(FuncPtr target, FuncPtr detour, FuncPtr *original,
 
   if (it != map.end()) {
     auto h = it->second;
-    h->chain.insert({detour, original, static_cast<int>(priority),
-                     h->nextId()});
+    h->chain.insert(
+        {detour, original, static_cast<int>(priority), h->nextId()});
     h->rebuildChain();
     return 0;
   }
@@ -98,9 +98,9 @@ int hook(FuncPtr target, FuncPtr detour, FuncPtr *original,
   h->target = target;
   h->origin = target;
 
-  h->glossHandle =
-      GlossHook(reinterpret_cast<void *>(target), reinterpret_cast<void *>(detour),
-                reinterpret_cast<void **>(&h->origin));
+  h->glossHandle = GlossHook(reinterpret_cast<void *>(target),
+                             reinterpret_cast<void *>(detour),
+                             reinterpret_cast<void **>(&h->origin));
   if (!h->glossHandle) {
     return -1;
   }

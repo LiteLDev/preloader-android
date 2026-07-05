@@ -190,7 +190,7 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeDispatchExter
   const char *id = env->GetStringUTFChars(buttonId, nullptr);
   if (id) {
     pl::runtime::DispatchRegisteredButtonEvent(
-        id, static_cast<PLModMenu_ButtonEvent>(event), value);
+        id, static_cast<pl::modmenu::ButtonEvent>(event), value);
     env->ReleaseStringUTFChars(buttonId, id);
   }
 }
