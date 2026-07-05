@@ -7,7 +7,11 @@
 
 #include <android/log.h>
 
-#include <format>
+#include <fmt/format.h>
+#include <fmt/std.h>
+
+#include <exception>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -18,7 +22,7 @@
 namespace pl::log {
 
 /**
- * @brief Named Android logger with std::format-style messages.
+ * @brief Named Android logger with fmt-style messages.
  */
 class Logger {
 public:
@@ -82,9 +86,22 @@ private:
 
   template <typename... Args>
   void log(int androidLevel, std::string_view fmtStr, Args &&...args) const {
-    const auto message = std::vformat(fmtStr, std::make_format_args(args...));
-    __android_log_print(androidLevel, mLoggerName.c_str(), "%s",
-                        message.c_str());
+    try {
+      const auto message =
+          fmt::vformat(fmt::string_view(fmtStr.data(), fmtStr.size()),
+                       fmt::make_format_args(args...));
+      __android_log_print(androidLevel, mLoggerName.c_str(), "%s",
+                          message.c_str());
+    } catch (const std::exception &ex) {
+      __android_log_print(ANDROID_LOG_ERROR, mLoggerName.c_str(),
+                          "Failed to format log message: %s", ex.what());
+      const int length =
+          fmtStr.size() > static_cast<size_t>(std::numeric_limits<int>::max())
+              ? std::numeric_limits<int>::max()
+              : static_cast<int>(fmtStr.size());
+      __android_log_print(androidLevel, mLoggerName.c_str(), "%.*s", length,
+                          fmtStr.data() ? fmtStr.data() : "");
+    }
   }
 };
 
