@@ -7,7 +7,6 @@
 #include <nlohmann/json.hpp>
 
 #include "pl/Logger.hpp"
-#include "pl/legacy/LegacyModMenu.h"
 #include "pl/runtime/ModMenuBridge.h"
 
 extern "C" {

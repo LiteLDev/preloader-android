@@ -1,13 +1,6 @@
 #pragma once
 
-#include <stdbool.h>
-#include <stdint.h>
-
-#include "pl/legacy/LegacyMacro.h"
-
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include <cstdint>
 
 typedef void (*PLModMenu_OnToggle_Fn)(const char *module_id, bool enabled);
 typedef void (*PLModMenu_OnConfigChanged_Fn)(const char *module_id,
@@ -134,10 +127,3 @@ typedef struct PLModMenu_Interface {
   bool (*RegisterButton)(const PLModMenu_ButtonInfo *info);
   void (*UnregisterButton)(const char *button_id);
 } PLModMenu_Interface;
-
-PL_LEGACY_EXPORT PLModMenu_Interface *GetPreloaderModMenu(void);
-
-#ifdef __cplusplus
-} // extern "C"
-#endif
-

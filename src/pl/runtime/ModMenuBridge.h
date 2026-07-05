@@ -1,6 +1,6 @@
 #pragma once
 
-#include "pl/legacy/LegacyModMenu.h"
+#include "pl/runtime/ModMenuTypes.h"
 
 #include <string>
 #include <vector>

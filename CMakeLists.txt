@@ -20,7 +20,6 @@ set(PRELOADER_SOURCES
         src/pl/internal/NativeModLifecycle.cpp
         src/pl/legacy/LegacyHook.cpp
         src/pl/legacy/LegacyInput.cpp
-        src/pl/legacy/LegacyModMenu.cpp
         src/pl/legacy/LegacyPatch.cpp
         src/pl/legacy/LegacySignature.cpp
         src/pl/memory/Hook.cpp

@@ -129,7 +129,7 @@ bool IsValidButtonEvent(PLModMenu_ButtonEvent event) {
   return event >= PL_BUTTON_EVENT_CLICK && event <= PL_BUTTON_EVENT_SCROLL;
 }
 
-PLModMenu_ConfigType ToLegacyConfigType(pl::modmenu::ConfigType type) {
+PLModMenu_ConfigType ToInterfaceConfigType(pl::modmenu::ConfigType type) {
   switch (type) {
   case pl::modmenu::ConfigType::Toggle:
     return PL_CONFIG_TOGGLE;
@@ -146,7 +146,7 @@ PLModMenu_ConfigType ToLegacyConfigType(pl::modmenu::ConfigType type) {
 }
 
 PLModMenu_ButtonBehavior
-ToLegacyButtonBehavior(pl::modmenu::ButtonBehavior behavior) {
+ToInterfaceButtonBehavior(pl::modmenu::ButtonBehavior behavior) {
   switch (behavior) {
   case pl::modmenu::ButtonBehavior::Click:
     return PL_BUTTON_CLICK;
@@ -159,7 +159,7 @@ ToLegacyButtonBehavior(pl::modmenu::ButtonBehavior behavior) {
 }
 
 PLModMenu_ButtonStylePreset
-ToLegacyButtonStylePreset(pl::modmenu::ButtonStylePreset preset) {
+ToInterfaceButtonStylePreset(pl::modmenu::ButtonStylePreset preset) {
   switch (preset) {
   case pl::modmenu::ButtonStylePreset::Keycap:
     return PL_BUTTON_STYLE_KEYCAP;
@@ -170,7 +170,7 @@ ToLegacyButtonStylePreset(pl::modmenu::ButtonStylePreset preset) {
 }
 
 PLModMenu_ButtonIconFormat
-ToLegacyButtonIconFormat(pl::modmenu::ButtonIconFormat format) {
+ToInterfaceButtonIconFormat(pl::modmenu::ButtonIconFormat format) {
   switch (format) {
   case pl::modmenu::ButtonIconFormat::Auto:
     return PL_BUTTON_ICON_AUTO;
@@ -185,7 +185,7 @@ ToLegacyButtonIconFormat(pl::modmenu::ButtonIconFormat format) {
 }
 
 PLModMenu_DrawCommandType
-ToLegacyDrawCommandType(pl::modmenu::DrawCommandType type) {
+ToInterfaceDrawCommandType(pl::modmenu::DrawCommandType type) {
   switch (type) {
   case pl::modmenu::DrawCommandType::Text:
     return PL_DRAW_TEXT;
@@ -994,7 +994,7 @@ bool RegisterCppModule(const pl::modmenu::ModuleInfo &info) {
     configs.push_back(PLModMenu_ConfigEntry{
         .key = config.key.c_str(),
         .display_name = config.displayName.c_str(),
-        .type = ToLegacyConfigType(config.type),
+        .type = ToInterfaceConfigType(config.type),
         .default_value =
             config.defaultValue.empty() ? nullptr : config.defaultValue.c_str(),
         .min_value = config.minValue.empty() ? nullptr : config.minValue.c_str(),
@@ -1009,7 +1009,7 @@ bool RegisterCppModule(const pl::modmenu::ModuleInfo &info) {
     return false;
   }
 
-  const PLModMenu_ModuleInfo legacyInfo{
+  const PLModMenu_ModuleInfo interfaceInfo{
       .module_id = info.moduleId.c_str(),
       .display_name = info.displayName.c_str(),
       .description = info.description.empty() ? nullptr
@@ -1023,7 +1023,7 @@ bool RegisterCppModule(const pl::modmenu::ModuleInfo &info) {
       .hide_in_hud_editor = info.hideInHudEditor,
   };
 
-  if (!RegisterModule(&legacyInfo)) {
+  if (!RegisterModule(&interfaceInfo)) {
     return false;
   }
 
@@ -1043,17 +1043,17 @@ bool RegisterCppButton(const pl::modmenu::ButtonInfo &info) {
     return false;
   }
 
-  const PLModMenu_ButtonInfo legacyInfo{
+  const PLModMenu_ButtonInfo interfaceInfo{
       .button_id = info.buttonId.c_str(),
       .module_id = info.moduleId.c_str(),
       .display_name = info.displayName.c_str(),
       .mod_id = info.modId.empty() ? nullptr : info.modId.c_str(),
       .label = info.label.empty() ? nullptr : info.label.c_str(),
       .android_key_code = info.androidKeyCode,
-      .behavior = ToLegacyButtonBehavior(info.behavior),
+      .behavior = ToInterfaceButtonBehavior(info.behavior),
       .default_visible = info.defaultVisible,
       .on_event = nullptr,
-      .preset = ToLegacyButtonStylePreset(info.stylePreset),
+      .preset = ToInterfaceButtonStylePreset(info.stylePreset),
       .normal_bg_color = info.normalBgColor,
       .active_bg_color = info.activeBgColor,
       .border_color = info.borderColor,
@@ -1063,11 +1063,11 @@ bool RegisterCppButton(const pl::modmenu::ButtonInfo &info) {
       .height_scale = info.heightScale,
       .icon_data = info.iconData.empty() ? nullptr : info.iconData.data(),
       .icon_data_size = static_cast<int>(info.iconData.size()),
-      .icon_format = ToLegacyButtonIconFormat(info.iconFormat),
+      .icon_format = ToInterfaceButtonIconFormat(info.iconFormat),
       .hide_label_when_icon_present = info.hideLabelWhenIconPresent,
   };
 
-  if (!RegisterButton(&legacyInfo)) {
+  if (!RegisterButton(&interfaceInfo)) {
     return false;
   }
 
@@ -1084,11 +1084,11 @@ void SubmitCppDrawCommands(std::string_view moduleId,
     return;
   }
 
-  std::vector<PLModMenu_DrawCommand> legacyCommands;
-  legacyCommands.reserve(commands.size());
+  std::vector<PLModMenu_DrawCommand> interfaceCommands;
+  interfaceCommands.reserve(commands.size());
   for (const auto &command : commands) {
-    legacyCommands.push_back(PLModMenu_DrawCommand{
-        .type = ToLegacyDrawCommandType(command.type),
+    interfaceCommands.push_back(PLModMenu_DrawCommand{
+        .type = ToInterfaceDrawCommandType(command.type),
         .x = command.x,
         .y = command.y,
         .w = command.w,
@@ -1106,8 +1106,9 @@ void SubmitCppDrawCommands(std::string_view moduleId,
 
   const std::string moduleIdString(moduleId);
   SubmitDrawCommands(moduleIdString.c_str(),
-                     legacyCommands.empty() ? nullptr : legacyCommands.data(),
-                     static_cast<int>(legacyCommands.size()));
+                     interfaceCommands.empty() ? nullptr
+                                               : interfaceCommands.data(),
+                     static_cast<int>(interfaceCommands.size()));
 }
 
 bool RegisterCppFont(std::string_view fontId,
