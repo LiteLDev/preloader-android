@@ -1,4 +1,4 @@
-#include "pl/c/Patch.h"
+#include "pl/memory/Patch.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -7,7 +7,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <span>
 #include <string>
+#include <string_view>
 #include <sys/mman.h>
 #include <unordered_map>
 #include <unistd.h>
@@ -209,71 +211,29 @@ namespace {
 
 } // namespace
 
-namespace pl::patch {
+namespace pl::memory {
 
-PLAPI bool writeBytes(uintptr_t addr, const std::vector<uint8_t> &bytes,
-                      const std::string &name) {
-    return writeBytesImpl(addr, bytes, name);
+bool writeBytes(uintptr_t addr, std::span<const uint8_t> bytes,
+                std::string_view name) {
+    return writeBytesImpl(addr, std::vector<uint8_t>(bytes.begin(), bytes.end()),
+                          std::string(name));
 }
 
-PLAPI bool writeBytes(uintptr_t addr, const std::string &bytes,
-                      const std::string &name) {
-    return writeHexImpl(addr, bytes, name);
+bool writeBytes(uintptr_t addr, std::string_view bytes,
+                std::string_view name) {
+    return writeHexImpl(addr, std::string(bytes), std::string(name));
 }
 
-PLAPI std::vector<uint8_t> readBytes(uintptr_t addr, size_t len) {
+std::vector<uint8_t> readBytes(uintptr_t addr, size_t len) {
     return readBytesImpl(addr, len);
 }
 
-PLAPI bool revert(const std::string &name) {
-    return revertImpl(name);
+bool revertPatch(std::string_view name) {
+    return revertImpl(std::string(name));
 }
 
-PLAPI void revertAll() {
+void revertAllPatches() {
     revertAllImpl();
 }
 
-} // namespace pl::patch
-
-extern "C" {
-
-PLAPI bool pl_patch_write_bytes(uintptr_t addr, const uint8_t *bytes,
-                                size_t len, const char *name) {
-    if (bytes == nullptr || name == nullptr || len == 0)
-        return false;
-
-    return writeBytesImpl(addr, std::vector<uint8_t>(bytes, bytes + len), name);
-}
-
-PLAPI bool pl_patch_write_hex(uintptr_t addr, const char *bytes,
-                              const char *name) {
-    if (bytes == nullptr || name == nullptr)
-        return false;
-
-    return writeHexImpl(addr, bytes, name);
-}
-
-PLAPI size_t pl_patch_read_bytes(uintptr_t addr, uint8_t *out, size_t len) {
-    if (out == nullptr || len == 0)
-        return 0;
-
-    const std::vector<uint8_t> bytes = readBytesImpl(addr, len);
-    if (bytes.size() != len)
-        return 0;
-
-    std::memcpy(out, bytes.data(), bytes.size());
-    return bytes.size();
-}
-
-PLAPI bool pl_patch_revert(const char *name) {
-    if (name == nullptr)
-        return false;
-
-    return revertImpl(name);
-}
-
-PLAPI void pl_patch_revert_all(void) {
-    revertAllImpl();
-}
-
-} // extern "C"
+} // namespace pl::memory

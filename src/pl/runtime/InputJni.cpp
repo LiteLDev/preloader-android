@@ -2,7 +2,6 @@
 
 #include <string>
 
-#include "pl/c/PreloaderInput.h"
 #include "pl/runtime/GameHooks.h"
 #include "pl/runtime/InputBridge.h"
 #include "pl/runtime/JavaRuntime.h"
@@ -118,10 +117,6 @@ Java_org_levimc_launcher_preloader_PreloaderInput_nativeConfigureSignatureRules(
 
   pl::runtime::ConfigureGameHooks(ToStdString(env, rulesPath),
                                   ToStdString(env, minecraftVersion));
-}
-
-PLAPI PreloaderInput_Interface *GetPreloaderInput() {
-  return pl::runtime::GetInputInterface();
 }
 
 } // extern "C"

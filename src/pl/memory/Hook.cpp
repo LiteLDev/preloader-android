@@ -3,14 +3,14 @@
 #include <set>
 #include <unordered_map>
 
-#include "pl/Gloss.h"
-#include "pl/c/Hook.h"
+#include "pl/legacy/Gloss.h"
+#include "pl/memory/Hook.hpp"
 
-namespace pl::hook {
+namespace pl::memory {
 
 struct HookElement {
-  PLFuncPtr detour{};
-  PLFuncPtr *originalFunc{};
+  FuncPtr detour{};
+  FuncPtr *originalFunc{};
   int priority{};
   int id{};
 
@@ -23,9 +23,9 @@ struct HookElement {
 };
 
 struct HookData {
-  PLFuncPtr target{};
-  PLFuncPtr origin{};
-  PLFuncPtr start{};
+  FuncPtr target{};
+  FuncPtr origin{};
+  FuncPtr start{};
   GHook glossHandle{};
   int counter{};
   std::set<HookElement> chain;
@@ -39,7 +39,7 @@ struct HookData {
   int nextId() noexcept { return ++counter; }
 
   void rebuildChain() {
-    PLFuncPtr *prev = nullptr;
+    FuncPtr *prev = nullptr;
     for (auto &e : chain) {
       if (!prev) {
         start = e.detour;
@@ -63,15 +63,15 @@ struct HookData {
   }
 };
 
-std::unordered_map<PLFuncPtr, std::shared_ptr<HookData>> &hooks() {
-  static std::unordered_map<PLFuncPtr, std::shared_ptr<HookData>> m;
+std::unordered_map<FuncPtr, std::shared_ptr<HookData>> &hooks() {
+  static std::unordered_map<FuncPtr, std::shared_ptr<HookData>> m;
   return m;
 }
 
 std::mutex mtx;
 
-int hook(PLFuncPtr target, PLFuncPtr detour, PLFuncPtr *original,
-         int priority) {
+int hook(FuncPtr target, FuncPtr detour, FuncPtr *original,
+         HookPriority priority) {
   if (!target || !detour || !original) {
     return -1;
   }
@@ -88,7 +88,8 @@ int hook(PLFuncPtr target, PLFuncPtr detour, PLFuncPtr *original,
 
   if (it != map.end()) {
     auto h = it->second;
-    h->chain.insert({detour, original, priority, h->nextId()});
+    h->chain.insert({detour, original, static_cast<int>(priority),
+                     h->nextId()});
     h->rebuildChain();
     return 0;
   }
@@ -104,13 +105,13 @@ int hook(PLFuncPtr target, PLFuncPtr detour, PLFuncPtr *original,
     return -1;
   }
 
-  h->chain.insert({detour, original, priority, h->nextId()});
+  h->chain.insert({detour, original, static_cast<int>(priority), h->nextId()});
   h->rebuildChain();
   map[target] = h;
   return 0;
 }
 
-bool unhook(PLFuncPtr target, PLFuncPtr detour) {
+bool unhook(FuncPtr target, FuncPtr detour) {
   std::lock_guard<std::mutex> lock(mtx);
   auto &map = hooks();
   auto it = map.find(target);
@@ -140,18 +141,4 @@ bool unhook(PLFuncPtr target, PLFuncPtr detour) {
   return true;
 }
 
-} // namespace pl::hook
-
-extern "C" {
-
-PLAPI int pl_hook(PLFuncPtr target, PLFuncPtr detour, PLFuncPtr *originalFunc,
-                  PLHookPriority priority) {
-  return pl::hook::hook(target, detour, originalFunc,
-                        static_cast<int>(priority));
-}
-
-PLAPI bool pl_unhook(PLFuncPtr target, PLFuncPtr detour) {
-  return pl::hook::unhook(target, detour);
-}
-
-} // extern "C"
+} // namespace pl::memory

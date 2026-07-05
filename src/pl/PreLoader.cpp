@@ -3,8 +3,7 @@
 #include <filesystem>
 #include <optional>
 
-#include "pl/Logger.h"
-#include "pl/c/PreloaderModMenu.h"
+#include "pl/Logger.hpp"
 #include "pl/internal/ModManager.h"
 #include "pl/runtime/GameHooks.h"
 #include "pl/runtime/JavaRuntime.h"
@@ -15,13 +14,13 @@ namespace {
 jboolean LoadModFromJava(JNIEnv *env, jstring libPath, jstring modRootPath) {
   JavaVM *vm = pl::runtime::GetJavaVm();
   if (!vm) {
-    preloader_logger.error("JavaVM is not initialized");
+    preloaderLogger.error("JavaVM is not initialized");
     return JNI_FALSE;
   }
 
   const char *path = env->GetStringUTFChars(libPath, nullptr);
   if (!path) {
-    preloader_logger.error("Failed to access mod library path");
+    preloaderLogger.error("Failed to access mod library path");
     return JNI_FALSE;
   }
 
@@ -31,7 +30,7 @@ jboolean LoadModFromJava(JNIEnv *env, jstring libPath, jstring modRootPath) {
     sourcePath = env->GetStringUTFChars(modRootPath, nullptr);
     if (!sourcePath) {
       env->ReleaseStringUTFChars(libPath, path);
-      preloader_logger.error("Failed to access original mod root path");
+      preloaderLogger.error("Failed to access original mod root path");
       return JNI_FALSE;
     }
     sourceModDirectory = std::filesystem::path(sourcePath);
@@ -103,12 +102,8 @@ Java_org_levimc_launcher_core_minecraft_MinecraftRuntimePreparer_nativeSetupRunt
     return;
   }
 
-  preloader_logger.debug("Native runtime mod directory: {}", path);
+  preloaderLogger.debug("Native runtime mod directory: {}", path);
   env->ReleaseStringUTFChars(modsPath, path);
-}
-
-PLAPI PLModMenu_Interface *GetPreloaderModMenu() {
-  return pl::runtime::GetModMenuInterface();
 }
 
 } // extern "C"

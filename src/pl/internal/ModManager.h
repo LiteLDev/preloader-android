@@ -4,7 +4,7 @@
 #include <optional>
 #include <string>
 
-#include "pl/c/Mod.h"
+#include "pl/legacy/LegacyMod.h"
 
 namespace ModManager {
 [[gnu::visibility("hidden")]] bool

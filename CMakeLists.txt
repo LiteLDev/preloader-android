@@ -8,9 +8,15 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(PRELOADER_SOURCES
         src/pl/PreLoader.cpp
         src/pl/internal/ModManager.cpp
+        src/pl/legacy/LegacyHook.cpp
+        src/pl/legacy/LegacyInput.cpp
+        src/pl/legacy/LegacyModMenu.cpp
+        src/pl/legacy/LegacyPatch.cpp
+        src/pl/legacy/LegacySignature.cpp
         src/pl/memory/Hook.cpp
         src/pl/memory/Patch.cpp
         src/pl/memory/Signature.cpp
+        src/pl/memory/Vtable.cpp
         src/pl/runtime/GameHookRules.cpp
         src/pl/runtime/GameHooks.cpp
         src/pl/runtime/ExternalModBridgeJni.cpp
@@ -22,7 +28,11 @@ set(PRELOADER_SOURCES
 
 add_library(preloader SHARED ${PRELOADER_SOURCES})
 
-target_include_directories(preloader PUBLIC src)
+target_include_directories(preloader
+        PUBLIC
+        include
+        PRIVATE
+        src)
 target_compile_definitions(preloader PRIVATE PRELOADER_EXPORT UNICODE)
 target_compile_options(preloader PRIVATE
         $<$<COMPILE_LANG_AND_ID:CXX,Clang,GNU>:-fvisibility=hidden -fvisibility-inlines-hidden>)
@@ -47,6 +57,7 @@ FetchContent_Declare(
         lunasvg
         GIT_REPOSITORY https://github.com/sammycage/lunasvg.git
         GIT_TAG v3.5.0
+        EXCLUDE_FROM_ALL
 )
 set(LUNASVG_BUILD_EXAMPLES OFF CACHE BOOL "Disable lunasvg examples" FORCE)
 set(LUNASVG_DISABLE_LOAD_SYSTEM_FONTS ON CACHE BOOL "Disable lunasvg system font scan" FORCE)
@@ -87,45 +98,6 @@ install(TARGETS preloader
         LIBRARY DESTINATION lib
         RUNTIME DESTINATION bin)
 
-install(FILES
-        src/pl/Gloss.h
-        src/pl/Logger.h
-        DESTINATION include/pl)
-
-install(FILES
-        src/pl/c/Hook.h
-        src/pl/c/Macro.h
-        src/pl/c/Mod.h
-        src/pl/c/Patch.h
-        src/pl/c/PreloaderInput.h
-        src/pl/c/PreloaderModMenu.h
-        src/pl/c/Signature.h
-        src/pl/c/Types.h
-        DESTINATION include/pl/c)
-
-install(FILES
-        src/pl/cpp/Config.hpp
-        src/pl/cpp/Hook.hpp
-        src/pl/cpp/Mod.hpp
-        src/pl/cpp/Patch.hpp
-        src/pl/cpp/PreloaderInput.hpp
-        src/pl/cpp/Signature.hpp
-        src/pl/cpp/Types.hpp
-        DESTINATION include/pl/cpp)
-
-install(FILES
-        src/pl/cpp/mod/Mod.hpp
-        src/pl/cpp/mod/NativeMod.hpp
-        src/pl/cpp/mod/RegisterHelper.hpp
-        DESTINATION include/pl/cpp/mod)
-
-install(FILES
-        src/pl/api/Macro.h
-        src/pl/api/Encoding.h
-        src/pl/api/Types.h
-        DESTINATION include/pl/api)
-
-install(FILES
-        src/pl/api/memory/Hook.h
-        src/pl/api/memory/Memory.h
-        DESTINATION include/pl/api/memory)
+install(DIRECTORY include/pl
+        DESTINATION include
+        FILES_MATCHING PATTERN "*.hpp")

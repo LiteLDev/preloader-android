@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <dlfcn.h>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
@@ -12,7 +13,9 @@
 
 #include <nlohmann/json.hpp>
 
-#include "pl/Logger.h"
+#include "pl/Logger.hpp"
+#include "pl/Mod.hpp"
+#include "pl/legacy/LegacyMod.h"
 #include "pl/runtime/ModMenuBridge.h"
 
 namespace {
@@ -21,20 +24,23 @@ constexpr const char *kLifecycleLoadSymbol = "PLMod_Load";
 constexpr const char *kLifecycleEnableSymbol = "PLMod_Enable";
 constexpr const char *kLifecycleDisableSymbol = "PLMod_Disable";
 constexpr const char *kLifecycleUnloadSymbol = "PLMod_Unload";
+constexpr const char *kCppRegistrationSymbol = pl::mod::ModRegistrationSymbol;
 constexpr const char *kManifestFileName = "manifest.json";
 constexpr const char *kPreloadNativeType = "preload-native";
 constexpr int kLoadedModLookupFlags = RTLD_NOLOAD | RTLD_NOW;
 constexpr int kModDlopenFlags = RTLD_NOW | RTLD_GLOBAL;
 
-auto &logger = preloader_logger;
+auto &logger = preloaderLogger;
 std::mutex gInitializedModsMutex;
 
 using PLModLifecycleLoadFunc = bool (*)(JavaVM *vm, const PLModInfo *mod_info);
 using PLModLifecycleFunc = bool (*)();
+using PLCppModRegistrationFunc = pl::mod::ModRegistration *(*)();
 
 enum class LoadedModKind {
   Legacy,
   Lifecycle,
+  CppLifecycle,
   NoEntry,
 };
 
@@ -52,6 +58,8 @@ struct LoadedModEntry {
   PLModLifecycleFunc enable{};
   PLModLifecycleFunc disable{};
   PLModLifecycleFunc unload{};
+  pl::mod::ModRegistration *cppRegistration{};
+  std::shared_ptr<pl::mod::ModContext> cppContext;
 };
 
 std::unordered_map<std::string, LoadedModEntry> gLoadedModLibraries;
@@ -274,6 +282,21 @@ void FinalizeRuntimeModInfo(RuntimeModInfoStorage &storage) {
   };
 }
 
+pl::mod::ModInfo ToCppModInfo(const RuntimeModInfoStorage &storage) {
+  return pl::mod::ModInfo{
+      .id = storage.modId,
+      .displayName = storage.displayName,
+      .author = storage.author,
+      .version = storage.version,
+      .entryPath = storage.entryPath,
+      .entryFileName = storage.entryFileName,
+      .libraryPath = storage.libraryPath,
+      .iconPath = storage.iconPath,
+      .manifestPath = storage.manifestPath,
+      .modRootPath = storage.modRootPath,
+  };
+}
+
 bool CreateRuntimeModInfo(
     const std::filesystem::path &libraryPath,
     const std::optional<std::filesystem::path> &sourceModDirectory,
@@ -332,6 +355,35 @@ PLModLifecycleFunc ResolveLifecycleFunc(void *handle, const char *symbol) {
   return reinterpret_cast<PLModLifecycleFunc>(dlsym(handle, symbol));
 }
 
+pl::mod::ModRegistration *ResolveCppModRegistration(void *handle) {
+  if (auto resolve = reinterpret_cast<PLCppModRegistrationFunc>(
+          dlsym(handle, kCppRegistrationSymbol))) {
+    return resolve();
+  }
+
+  return nullptr;
+}
+
+bool RunCppLifecycle(pl::mod::ModRegistration &registration,
+                     pl::mod::ModContext &context,
+                     pl::mod::LifecycleFunction lifecycle,
+                     const char *phase) {
+  if (!lifecycle) {
+    return true;
+  }
+
+  try {
+    return lifecycle(registration.instance, context);
+  } catch (const std::exception &ex) {
+    context.logger().error("Unhandled exception while {} mod {}: {}", phase,
+                           context.name(), ex.what());
+  } catch (...) {
+    context.logger().error("Unhandled unknown exception while {} mod {}",
+                           phase, context.name());
+  }
+  return false;
+}
+
 bool IsModAlreadyRegistered(const std::string &normalizedLibraryPath) {
   std::lock_guard<std::mutex> lock(gInitializedModsMutex);
   const auto it = gLoadedModLibraries.find(normalizedLibraryPath);
@@ -360,7 +412,8 @@ std::vector<std::string> GetLoadedModKeysSnapshot() {
       continue;
 
     const auto &entry = it->second;
-    if (entry.kind == LoadedModKind::Lifecycle &&
+    if ((entry.kind == LoadedModKind::Lifecycle ||
+         entry.kind == LoadedModKind::CppLifecycle) &&
         entry.state != LoadedModState::Unloaded) {
       keys.push_back(key);
     }
@@ -425,7 +478,24 @@ bool ModManager::LoadModLibrary(
       .state = LoadedModState::Loaded,
   };
 
-  if (auto load = ResolveLifecycleLoad(handle)) {
+  if (auto cppRegistration = ResolveCppModRegistration(handle)) {
+    entry.kind = LoadedModKind::CppLifecycle;
+    entry.cppRegistration = cppRegistration;
+    entry.cppContext =
+        std::make_shared<pl::mod::ModContext>(vm, ToCppModInfo(modInfoStorage));
+
+    bool loaded = false;
+    {
+      pl::runtime::ScopedModMenuOwner owner(modInfoStorage.modId);
+      loaded = RunCppLifecycle(*entry.cppRegistration, *entry.cppContext,
+                               entry.cppRegistration->load, "loading");
+    }
+    if (!loaded) {
+      logger.error("Failed to run C++ mod registration for {}",
+                   modInfoStorage.modId);
+      return false;
+    }
+  } else if (auto load = ResolveLifecycleLoad(handle)) {
     entry.kind = LoadedModKind::Lifecycle;
     entry.enable = ResolveLifecycleFunc(handle, kLifecycleEnableSymbol);
     entry.disable = ResolveLifecycleFunc(handle, kLifecycleDisableSymbol);
@@ -457,8 +527,32 @@ void ModManager::EnableLoadedMods() {
   const auto keys = GetLoadedModKeysSnapshot();
   for (const auto &key : keys) {
     const auto entry = GetLoadedModEntry(key);
-    if (!entry.has_value() || entry->kind != LoadedModKind::Lifecycle ||
+    if (!entry.has_value() ||
+        (entry->kind != LoadedModKind::Lifecycle &&
+         entry->kind != LoadedModKind::CppLifecycle) ||
         entry->state != LoadedModState::Loaded) {
+      continue;
+    }
+
+    if (entry->kind == LoadedModKind::CppLifecycle) {
+      if (!entry->cppRegistration || !entry->cppContext) {
+        logger.error("C++ lifecycle mod {} is missing registration state",
+                     entry->modId);
+        continue;
+      }
+
+      bool enabled = false;
+      {
+        pl::runtime::ScopedModMenuOwner owner(entry->modId);
+        enabled = RunCppLifecycle(*entry->cppRegistration, *entry->cppContext,
+                                  entry->cppRegistration->enable, "enabling");
+      }
+      if (!enabled) {
+        logger.error("Failed to enable C++ lifecycle mod {}", entry->modId);
+        continue;
+      }
+
+      SetLoadedModState(key, LoadedModState::Enabled);
       continue;
     }
 
@@ -488,14 +582,27 @@ void ModManager::DisableAndUnloadLoadedMods() {
 
   for (const auto &key : keys) {
     auto entry = GetLoadedModEntry(key);
-    if (!entry.has_value() || entry->kind != LoadedModKind::Lifecycle ||
+    if (!entry.has_value() ||
+        (entry->kind != LoadedModKind::Lifecycle &&
+         entry->kind != LoadedModKind::CppLifecycle) ||
         entry->state == LoadedModState::Unloaded) {
       continue;
     }
 
     if (entry->state == LoadedModState::Enabled) {
       bool disabled = true;
-      if (entry->disable) {
+      if (entry->kind == LoadedModKind::CppLifecycle) {
+        if (!entry->cppRegistration || !entry->cppContext) {
+          disabled = false;
+          logger.error("C++ lifecycle mod {} is missing registration state",
+                       entry->modId);
+        } else {
+          pl::runtime::ScopedModMenuOwner owner(entry->modId);
+          disabled =
+              RunCppLifecycle(*entry->cppRegistration, *entry->cppContext,
+                              entry->cppRegistration->disable, "disabling");
+        }
+      } else if (entry->disable) {
         {
           pl::runtime::ScopedModMenuOwner owner(entry->modId);
           disabled = entry->disable();
@@ -518,7 +625,25 @@ void ModManager::DisableAndUnloadLoadedMods() {
       continue;
     }
 
-    if (entry->unload) {
+    if (entry->kind == LoadedModKind::CppLifecycle) {
+      if (!entry->cppRegistration || !entry->cppContext) {
+        logger.error("C++ lifecycle mod {} is missing registration state",
+                     entry->modId);
+        continue;
+      }
+
+      bool unloaded = false;
+      {
+        pl::runtime::ScopedModMenuOwner owner(entry->modId);
+        unloaded = RunCppLifecycle(*entry->cppRegistration, *entry->cppContext,
+                                   entry->cppRegistration->unload,
+                                   "unloading");
+      }
+      if (!unloaded) {
+        logger.error("Failed to unload C++ lifecycle mod {}", entry->modId);
+        continue;
+      }
+    } else if (entry->unload) {
       bool unloaded = false;
       {
         pl::runtime::ScopedModMenuOwner owner(entry->modId);

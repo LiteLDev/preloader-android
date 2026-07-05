@@ -1,6 +1,6 @@
 #pragma once
 
-#include "pl/c/PreloaderModMenu.h"
+#include "pl/legacy/LegacyModMenu.h"
 
 #include <string>
 #include <vector>

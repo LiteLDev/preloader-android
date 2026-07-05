@@ -1,6 +1,6 @@
 #pragma once
 
-#include "pl/c/PreloaderInput.h"
+#include "pl/legacy/LegacyInput.h"
 
 namespace pl::runtime {
 

@@ -1,4 +1,4 @@
-#include "pl/cpp/Signature.hpp"
+#include "pl/memory/Signature.hpp"
 
 #include <algorithm>
 #include <array>
@@ -9,15 +9,16 @@
 #include <cstring>
 #include <dlfcn.h>
 #include <mutex>
+#include <span>
 #include <shared_mutex>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
 
-#include "pl/Logger.h"
+#include "pl/Logger.hpp"
 
-namespace pl::signature {
+namespace pl::memory {
 namespace {
 
 constexpr size_t kMaxExactAnchorSize = 8;
@@ -490,7 +491,7 @@ compilePatterns(const std::vector<std::string> &signatures,
   for (const auto &signature : signatures) {
     auto pattern = getCachedPattern(signature);
     if (pattern.bytes.empty()) {
-      preloader_logger.warn("invalid signature pattern: {}", signature);
+      preloaderLogger.warn("invalid signature pattern: {}", signature);
       results[signature] = 0;
       continue;
     }
@@ -613,8 +614,8 @@ std::string makeSignatureCacheKey(std::string_view moduleName,
 } // namespace
 
 std::unordered_map<std::string, uintptr_t>
-resolveSignatures(const std::vector<std::string> &signatures,
-                  const std::string &moduleName) {
+resolveSignatures(std::span<const std::string> signatures,
+                  std::string_view moduleName) {
   std::unordered_map<std::string, uintptr_t> results;
   std::vector<std::string> pendingSignatures;
   std::unordered_map<std::string, size_t> pendingLookup;
@@ -648,7 +649,7 @@ resolveSignatures(const std::vector<std::string> &signatures,
     return results;
   }
 
-  const ModuleInfo mod = getCachedModuleInfo(moduleName);
+  const ModuleInfo mod = getCachedModuleInfo(std::string(moduleName));
   if (mod.regions.empty()) {
     for (const auto &signature : pendingSignatures) {
       results[signature] = 0;
@@ -669,7 +670,7 @@ resolveSignatures(const std::vector<std::string> &signatures,
 
     if (!patternSignatures.empty()) {
       const auto frequencies =
-          getCachedByteFrequencyTable(moduleName, mod.regions);
+          getCachedByteFrequencyTable(std::string(moduleName), mod.regions);
       const auto compiled =
           compilePatterns(patternSignatures, frequencies, results);
       scanCompiledPatterns(mod.regions, compiled, results);
@@ -687,28 +688,14 @@ resolveSignatures(const std::vector<std::string> &signatures,
   return results;
 }
 
-uintptr_t resolveSignature(const std::string &signature,
-                           const std::string &moduleName) {
-  return ::pl_resolve_signature(signature.c_str(), moduleName.c_str());
-}
-
-} // namespace pl::signature
-
-extern "C" {
-
-PLAPI uintptr_t pl_resolve_signature(const char *signature,
-                                     const char *moduleName) {
-  if (!signature || !moduleName) {
-    return 0;
-  }
-
-  const auto results = pl::signature::resolveSignatures(
-      std::vector<std::string>{signature}, moduleName);
-  if (const auto it = results.find(signature); it != results.end()) {
+uintptr_t resolveSignature(std::string_view signature,
+                           std::string_view moduleName) {
+  std::vector<std::string> signatures{std::string(signature)};
+  const auto results = resolveSignatures(signatures, moduleName);
+  if (const auto it = results.find(std::string(signature)); it != results.end()) {
     return it->second;
   }
-
   return 0;
 }
 
-} // extern "C"
+} // namespace pl::memory

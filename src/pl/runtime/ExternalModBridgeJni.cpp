@@ -6,8 +6,8 @@
 
 #include <nlohmann/json.hpp>
 
-#include "pl/Logger.h"
-#include "pl/c/PreloaderModMenu.h"
+#include "pl/Logger.hpp"
+#include "pl/legacy/LegacyModMenu.h"
 #include "pl/runtime/ModMenuBridge.h"
 
 extern "C" {
@@ -161,7 +161,7 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetExternalBu
   const size_t maxArrayLength =
       static_cast<size_t>(std::numeric_limits<jsize>::max());
   if (iconData.size() > maxArrayLength) {
-    preloader_logger.error("Registered button icon is too large to marshal to "
+    preloaderLogger.error("Registered button icon is too large to marshal to "
                            "Java: {}",
                            iconData.size());
     return nullptr;
@@ -210,7 +210,7 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetDrawComman
       static_cast<size_t>(std::numeric_limits<jsize>::max());
   if (commandCount > maxArrayLength ||
       commandCount > maxArrayLength / kRectFieldsPerCommand) {
-    preloader_logger.error("Too many draw commands to marshal to Java: {}",
+    preloaderLogger.error("Too many draw commands to marshal to Java: {}",
                            commandCount);
     return nullptr;
   }
@@ -366,7 +366,7 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetRegistered
   const size_t maxArrayLength =
       static_cast<size_t>(std::numeric_limits<jsize>::max());
   if (fontData.size() > maxArrayLength) {
-    preloader_logger.error(
+    preloaderLogger.error(
         "Registered font is too large to marshal to Java: {}", fontData.size());
     return nullptr;
   }

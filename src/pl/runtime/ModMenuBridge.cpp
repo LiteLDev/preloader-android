@@ -4,13 +4,19 @@
 #include <cctype>
 #include <cmath>
 #include <cstring>
+#include <functional>
+#include <limits>
 #include <mutex>
+#include <span>
+#include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include <lunasvg.h>
 
-#include "pl/Logger.h"
+#include "pl/Logger.hpp"
+#include "pl/ModMenu.hpp"
 
 namespace pl::runtime {
 namespace {
@@ -37,6 +43,17 @@ std::vector<RegisteredModule> g_registeredModules;
 std::vector<RegisteredButton> g_registeredButtons;
 std::mutex g_modMenuMutex;
 thread_local std::vector<std::string> g_currentOwnerModIds;
+std::unordered_map<std::string,
+                   std::function<void(std::string_view, bool)>>
+    g_cppToggleCallbacks;
+std::unordered_map<std::string,
+                   std::function<void(std::string_view, std::string_view,
+                                      std::string_view)>>
+    g_cppConfigChangedCallbacks;
+std::unordered_map<std::string,
+                   std::function<void(std::string_view,
+                                      pl::modmenu::ButtonEvent, float)>>
+    g_cppButtonEventCallbacks;
 
 struct RegisteredFont {
   std::string font_id;
@@ -55,18 +72,18 @@ bool ReadString(const char *value, size_t maxLength, const char *fieldName,
   out.clear();
   if (!value) {
     if (required)
-      preloader_logger.error("Mod Menu registration missing {}", fieldName);
+      preloaderLogger.error("Mod Menu registration missing {}", fieldName);
     return !required;
   }
 
   const size_t length = strnlen(value, maxLength + 1);
   if (length == 0) {
     if (required)
-      preloader_logger.error("Mod Menu registration has empty {}", fieldName);
+      preloaderLogger.error("Mod Menu registration has empty {}", fieldName);
     return !required;
   }
   if (length > maxLength) {
-    preloader_logger.error("Mod Menu registration {} is too long", fieldName);
+    preloaderLogger.error("Mod Menu registration {} is too long", fieldName);
     return false;
   }
 
@@ -102,6 +119,96 @@ bool IsValidButtonIconFormat(PLModMenu_ButtonIconFormat format) {
 
 bool IsValidButtonEvent(PLModMenu_ButtonEvent event) {
   return event >= PL_BUTTON_EVENT_CLICK && event <= PL_BUTTON_EVENT_SCROLL;
+}
+
+PLModMenu_ConfigType ToLegacyConfigType(pl::modmenu::ConfigType type) {
+  switch (type) {
+  case pl::modmenu::ConfigType::Toggle:
+    return PL_CONFIG_TOGGLE;
+  case pl::modmenu::ConfigType::SliderInt:
+    return PL_CONFIG_SLIDER_INT;
+  case pl::modmenu::ConfigType::SliderFloat:
+    return PL_CONFIG_SLIDER_FLOAT;
+  case pl::modmenu::ConfigType::Radio:
+    return PL_CONFIG_RADIO;
+  case pl::modmenu::ConfigType::Color:
+    return PL_CONFIG_COLOR;
+  }
+  return PL_CONFIG_TOGGLE;
+}
+
+PLModMenu_ButtonBehavior
+ToLegacyButtonBehavior(pl::modmenu::ButtonBehavior behavior) {
+  switch (behavior) {
+  case pl::modmenu::ButtonBehavior::Click:
+    return PL_BUTTON_CLICK;
+  case pl::modmenu::ButtonBehavior::Hold:
+    return PL_BUTTON_HOLD;
+  case pl::modmenu::ButtonBehavior::Toggle:
+    return PL_BUTTON_TOGGLE;
+  }
+  return PL_BUTTON_CLICK;
+}
+
+PLModMenu_ButtonStylePreset
+ToLegacyButtonStylePreset(pl::modmenu::ButtonStylePreset preset) {
+  switch (preset) {
+  case pl::modmenu::ButtonStylePreset::Keycap:
+    return PL_BUTTON_STYLE_KEYCAP;
+  case pl::modmenu::ButtonStylePreset::Accent:
+    return PL_BUTTON_STYLE_ACCENT;
+  }
+  return PL_BUTTON_STYLE_KEYCAP;
+}
+
+PLModMenu_ButtonIconFormat
+ToLegacyButtonIconFormat(pl::modmenu::ButtonIconFormat format) {
+  switch (format) {
+  case pl::modmenu::ButtonIconFormat::Auto:
+    return PL_BUTTON_ICON_AUTO;
+  case pl::modmenu::ButtonIconFormat::Png:
+    return PL_BUTTON_ICON_PNG;
+  case pl::modmenu::ButtonIconFormat::Webp:
+    return PL_BUTTON_ICON_WEBP;
+  case pl::modmenu::ButtonIconFormat::Svg:
+    return PL_BUTTON_ICON_SVG;
+  }
+  return PL_BUTTON_ICON_AUTO;
+}
+
+PLModMenu_DrawCommandType
+ToLegacyDrawCommandType(pl::modmenu::DrawCommandType type) {
+  switch (type) {
+  case pl::modmenu::DrawCommandType::Text:
+    return PL_DRAW_TEXT;
+  case pl::modmenu::DrawCommandType::Rect:
+    return PL_DRAW_RECT;
+  case pl::modmenu::DrawCommandType::Line:
+    return PL_DRAW_LINE;
+  case pl::modmenu::DrawCommandType::RectFilled:
+    return PL_DRAW_RECT_FILLED;
+  case pl::modmenu::DrawCommandType::CircleFilled:
+    return PL_DRAW_CIRCLE_FILLED;
+  case pl::modmenu::DrawCommandType::TriangleFilled:
+    return PL_DRAW_TRIANGLE_FILLED;
+  }
+  return PL_DRAW_TEXT;
+}
+
+pl::modmenu::ButtonEvent ToPublicButtonEvent(PLModMenu_ButtonEvent event) {
+  switch (event) {
+  case PL_BUTTON_EVENT_CLICK:
+    return pl::modmenu::ButtonEvent::Click;
+  case PL_BUTTON_EVENT_DOWN:
+    return pl::modmenu::ButtonEvent::Down;
+  case PL_BUTTON_EVENT_UP:
+    return pl::modmenu::ButtonEvent::Up;
+  case PL_BUTTON_EVENT_STATE_CHANGED:
+    return pl::modmenu::ButtonEvent::StateChanged;
+  case PL_BUTTON_EVENT_SCROLL:
+    return pl::modmenu::ButtonEvent::Scroll;
+  }
+  return pl::modmenu::ButtonEvent::Click;
 }
 
 float NormalizeButtonScale(float value, float minValue, float maxValue) {
@@ -157,7 +264,7 @@ bool RenderSvgIconToPng(const std::vector<unsigned char> &svgData, int width,
   auto document = lunasvg::Document::loadFromData(
       reinterpret_cast<const char *>(svgData.data()), svgData.size());
   if (!document) {
-    preloader_logger.error("Failed to parse registered SVG button icon");
+    preloaderLogger.error("Failed to parse registered SVG button icon");
     return false;
   }
 
@@ -165,13 +272,13 @@ bool RenderSvgIconToPng(const std::vector<unsigned char> &svgData, int width,
       NormalizeRenderedIconSize(width), NormalizeRenderedIconSize(height),
       0x00000000);
   if (bitmap.isNull()) {
-    preloader_logger.error("Failed to render registered SVG button icon");
+    preloaderLogger.error("Failed to render registered SVG button icon");
     return false;
   }
 
   out.clear();
   if (!bitmap.writeToPng(AppendPngBytes, &out)) {
-    preloader_logger.error("Failed to encode registered SVG button icon");
+    preloaderLogger.error("Failed to encode registered SVG button icon");
     return false;
   }
   return !out.empty();
@@ -187,19 +294,19 @@ bool HasFiniteDrawGeometry(const PLModMenu_DrawCommand &command) {
 bool ValidateDrawCommands(const char *module_id,
                           const PLModMenu_DrawCommand *commands, int count) {
   if (count < 0 || count > kMaxDrawCommandCount) {
-    preloader_logger.error("Rejected draw commands for {}: invalid count {}",
+    preloaderLogger.error("Rejected draw commands for {}: invalid count {}",
                            module_id, count);
     return false;
   }
   if (count > 0 && !commands) {
-    preloader_logger.error("Rejected draw commands for {}: null command array",
+    preloaderLogger.error("Rejected draw commands for {}: null command array",
                            module_id);
     return false;
   }
 
   for (int i = 0; i < count; ++i) {
     if (!HasFiniteDrawGeometry(commands[i])) {
-      preloader_logger.error("Rejected draw command {} for {}: non-finite "
+      preloaderLogger.error("Rejected draw command {} for {}: non-finite "
                              "geometry or size",
                              i, module_id);
       return false;
@@ -210,7 +317,7 @@ bool ValidateDrawCommands(const char *module_id,
                             "draw command text", unused) ||
         !ReadOptionalString(commands[i].font_id, kMaxModuleIdLength,
                             "draw command font_id", unused)) {
-      preloader_logger.error("Rejected draw command {} for {}", i, module_id);
+      preloaderLogger.error("Rejected draw command {} for {}", i, module_id);
       return false;
     }
   }
@@ -219,7 +326,7 @@ bool ValidateDrawCommands(const char *module_id,
 
 bool RegisterModule(const PLModMenu_ModuleInfo *info) {
   if (!info) {
-    preloader_logger.error("Mod Menu registration received null module info");
+    preloaderLogger.error("Mod Menu registration received null module info");
     return false;
   }
 
@@ -242,7 +349,7 @@ bool RegisterModule(const PLModMenu_ModuleInfo *info) {
     if (modId.empty()) {
       modId = ownerModId;
     } else if (modId != ownerModId) {
-      preloader_logger.error(
+      preloaderLogger.error(
           "Rejected Mod Menu module {}: declared mod_id {} does not match "
           "owning lifecycle mod {}",
           moduleId, modId, ownerModId);
@@ -251,13 +358,13 @@ bool RegisterModule(const PLModMenu_ModuleInfo *info) {
   }
 
   if (info->config_count < 0 || info->config_count > kMaxConfigCount) {
-    preloader_logger.error("Rejected Mod Menu module {}: invalid config_count "
+    preloaderLogger.error("Rejected Mod Menu module {}: invalid config_count "
                            "{}",
                            moduleId, info->config_count);
     return false;
   }
   if (info->config_count > 0 && !info->configs) {
-    preloader_logger.error("Rejected Mod Menu module {}: null config array",
+    preloaderLogger.error("Rejected Mod Menu module {}: null config array",
                            moduleId);
     return false;
   }
@@ -266,7 +373,7 @@ bool RegisterModule(const PLModMenu_ModuleInfo *info) {
 
   for (const auto &mod : g_registeredModules) {
     if (mod.module_id == moduleId) {
-      preloader_logger.error("Rejected duplicate Mod Menu module {}",
+      preloaderLogger.error("Rejected duplicate Mod Menu module {}",
                              moduleId);
       return false;
     }
@@ -287,7 +394,7 @@ bool RegisterModule(const PLModMenu_ModuleInfo *info) {
   for (int i = 0; i < info->config_count; ++i) {
     const auto &src = info->configs[i];
     if (!IsValidConfigType(src.type)) {
-      preloader_logger.error("Rejected Mod Menu module {}: config {} has "
+      preloaderLogger.error("Rejected Mod Menu module {}: config {} has "
                              "invalid type {}",
                              entry.module_id, i, static_cast<int>(src.type));
       return false;
@@ -306,7 +413,7 @@ bool RegisterModule(const PLModMenu_ModuleInfo *info) {
                             "config max_value", cfg.max_value) ||
         !ReadOptionalString(src.depends_on, kMaxConfigStringLength,
                             "config depends_on", cfg.depends_on)) {
-      preloader_logger.error("Rejected Mod Menu module {}: invalid config {}",
+      preloaderLogger.error("Rejected Mod Menu module {}: invalid config {}",
                              entry.module_id, i);
       return false;
     }
@@ -333,6 +440,12 @@ void UnregisterModule(const char *module_id) {
   if (!module_id)
     return;
   std::lock_guard<std::mutex> lock(g_modMenuMutex);
+  std::vector<std::string> removedButtons;
+  for (const auto &button : g_registeredButtons) {
+    if (button.module_id == module_id) {
+      removedButtons.push_back(button.button_id);
+    }
+  }
   g_registeredModules.erase(
       std::remove_if(g_registeredModules.begin(), g_registeredModules.end(),
                      [module_id](const RegisteredModule &m) {
@@ -345,6 +458,11 @@ void UnregisterModule(const char *module_id) {
                        return button.module_id == module_id;
                      }),
       g_registeredButtons.end());
+  g_cppToggleCallbacks.erase(module_id);
+  g_cppConfigChangedCallbacks.erase(module_id);
+  for (const auto &buttonId : removedButtons) {
+    g_cppButtonEventCallbacks.erase(buttonId);
+  }
 }
 
 void SetModuleEnabled(const char *module_id, bool enabled) {
@@ -396,19 +514,19 @@ void SubmitDrawCommands(const char *module_id,
 
 bool RegisterButton(const PLModMenu_ButtonInfo *info) {
   if (!info) {
-    preloader_logger.error("Mod Menu button registration received null info");
+    preloaderLogger.error("Mod Menu button registration received null info");
     return false;
   }
 
   PLModMenu_ButtonStylePreset stylePreset = info->preset;
   if (!IsValidButtonStylePreset(stylePreset)) {
-    preloader_logger.error("Rejected Mod Menu button: invalid style preset {}",
+    preloaderLogger.error("Rejected Mod Menu button: invalid style preset {}",
                            static_cast<int>(stylePreset));
     return false;
   }
 
   if (!IsValidButtonIconFormat(info->icon_format)) {
-    preloader_logger.error("Rejected Mod Menu button: invalid icon format {}",
+    preloaderLogger.error("Rejected Mod Menu button: invalid icon format {}",
                            static_cast<int>(info->icon_format));
     return false;
   }
@@ -416,13 +534,13 @@ bool RegisterButton(const PLModMenu_ButtonInfo *info) {
   std::vector<unsigned char> iconData;
   if (info->icon_data_size > 0) {
     if (!info->icon_data || info->icon_data_size > kMaxButtonIconBytes) {
-      preloader_logger.error("Rejected Mod Menu button: invalid icon size {}",
+      preloaderLogger.error("Rejected Mod Menu button: invalid icon size {}",
                              info->icon_data_size);
       return false;
     }
     iconData.assign(info->icon_data, info->icon_data + info->icon_data_size);
   } else if (info->icon_data_size < 0) {
-    preloader_logger.error("Rejected Mod Menu button: invalid icon size {}",
+    preloaderLogger.error("Rejected Mod Menu button: invalid icon size {}",
                            info->icon_data_size);
     return false;
   }
@@ -452,7 +570,7 @@ bool RegisterButton(const PLModMenu_ButtonInfo *info) {
   }
 
   if (!IsValidButtonBehavior(info->behavior)) {
-    preloader_logger.error("Rejected Mod Menu button {}: invalid behavior {}",
+    preloaderLogger.error("Rejected Mod Menu button {}: invalid behavior {}",
                            buttonId, static_cast<int>(info->behavior));
     return false;
   }
@@ -462,7 +580,7 @@ bool RegisterButton(const PLModMenu_ButtonInfo *info) {
     if (modId.empty()) {
       modId = ownerModId;
     } else if (modId != ownerModId) {
-      preloader_logger.error(
+      preloaderLogger.error(
           "Rejected Mod Menu button {}: declared mod_id {} does not match "
           "owning lifecycle mod {}",
           buttonId, modId, ownerModId);
@@ -473,7 +591,7 @@ bool RegisterButton(const PLModMenu_ButtonInfo *info) {
   std::lock_guard<std::mutex> lock(g_modMenuMutex);
   for (const auto &button : g_registeredButtons) {
     if (button.button_id == buttonId) {
-      preloader_logger.error("Rejected duplicate Mod Menu button {}",
+      preloaderLogger.error("Rejected duplicate Mod Menu button {}",
                              buttonId);
       return false;
     }
@@ -486,7 +604,7 @@ bool RegisterButton(const PLModMenu_ButtonInfo *info) {
       if (modId.empty()) {
         modId = mod.mod_id;
       } else if (!mod.mod_id.empty() && modId != mod.mod_id) {
-        preloader_logger.error(
+        preloaderLogger.error(
             "Rejected Mod Menu button {}: mod_id {} does not match module {} "
             "owner {}",
             buttonId, modId, moduleId, mod.mod_id);
@@ -533,6 +651,7 @@ void UnregisterButton(const char *button_id) {
                        return button.button_id == button_id;
                      }),
       g_registeredButtons.end());
+  g_cppButtonEventCallbacks.erase(button_id);
 }
 
 PLModMenu_Interface g_modMenuInterface = {
@@ -575,12 +694,17 @@ void ToggleRegisteredModule(const char *module_id, bool enabled) {
   if (!module_id)
     return;
   PLModMenu_OnToggle_Fn callback = nullptr;
+  std::function<void(std::string_view, bool)> cppCallback;
   {
     std::lock_guard<std::mutex> lock(g_modMenuMutex);
     for (auto &mod : g_registeredModules) {
       if (mod.module_id == module_id) {
         mod.enabled = enabled;
         callback = mod.on_toggle;
+        if (const auto it = g_cppToggleCallbacks.find(mod.module_id);
+            it != g_cppToggleCallbacks.end()) {
+          cppCallback = it->second;
+        }
         break;
       }
     }
@@ -591,6 +715,8 @@ void ToggleRegisteredModule(const char *module_id, bool enabled) {
   }
   if (callback)
     callback(module_id, enabled);
+  if (cppCallback)
+    cppCallback(module_id, enabled);
 }
 
 void SetRegisteredModuleConfig(const char *module_id, const char *key,
@@ -599,6 +725,8 @@ void SetRegisteredModuleConfig(const char *module_id, const char *key,
     return;
   const char *safeValue = value ? value : "";
   PLModMenu_OnConfigChanged_Fn callback = nullptr;
+  std::function<void(std::string_view, std::string_view, std::string_view)>
+      cppCallback;
   {
     std::lock_guard<std::mutex> lock(g_modMenuMutex);
     for (auto &mod : g_registeredModules) {
@@ -610,12 +738,18 @@ void SetRegisteredModuleConfig(const char *module_id, const char *key,
           }
         }
         callback = mod.on_config_changed;
+        if (const auto it = g_cppConfigChangedCallbacks.find(mod.module_id);
+            it != g_cppConfigChangedCallbacks.end()) {
+          cppCallback = it->second;
+        }
         break;
       }
     }
   }
   if (callback)
     callback(module_id, key, safeValue);
+  if (cppCallback)
+    cppCallback(module_id, key, safeValue);
 }
 
 void UnregisterModulesForModId(const std::string &modId) {
@@ -623,6 +757,18 @@ void UnregisterModulesForModId(const std::string &modId) {
     return;
 
   std::lock_guard<std::mutex> lock(g_modMenuMutex);
+  std::vector<std::string> removedModules;
+  std::vector<std::string> removedButtons;
+  for (const auto &module : g_registeredModules) {
+    if (module.mod_id == modId) {
+      removedModules.push_back(module.module_id);
+    }
+  }
+  for (const auto &button : g_registeredButtons) {
+    if (button.mod_id == modId) {
+      removedButtons.push_back(button.button_id);
+    }
+  }
   g_registeredModules.erase(
       std::remove_if(g_registeredModules.begin(), g_registeredModules.end(),
                      [&modId](const RegisteredModule &m) {
@@ -635,6 +781,13 @@ void UnregisterModulesForModId(const std::string &modId) {
                        return button.mod_id == modId;
                      }),
       g_registeredButtons.end());
+  for (const auto &moduleId : removedModules) {
+    g_cppToggleCallbacks.erase(moduleId);
+    g_cppConfigChangedCallbacks.erase(moduleId);
+  }
+  for (const auto &buttonId : removedButtons) {
+    g_cppButtonEventCallbacks.erase(buttonId);
+  }
 }
 
 int GetRegisteredButtonCount() {
@@ -693,17 +846,25 @@ void DispatchRegisteredButtonEvent(const char *button_id,
     return;
 
   PLModMenu_OnButtonEvent_Fn callback = nullptr;
+  std::function<void(std::string_view, pl::modmenu::ButtonEvent, float)>
+      cppCallback;
   {
     std::lock_guard<std::mutex> lock(g_modMenuMutex);
     for (const auto &button : g_registeredButtons) {
       if (button.button_id == button_id) {
         callback = button.on_event;
+        if (const auto it = g_cppButtonEventCallbacks.find(button.button_id);
+            it != g_cppButtonEventCallbacks.end()) {
+          cppCallback = it->second;
+        }
         break;
       }
     }
   }
   if (callback)
     callback(button_id, event, value);
+  if (cppCallback)
+    cppCallback(button_id, ToPublicButtonEvent(event), value);
 }
 
 void GetDrawCommands(std::vector<InternalDrawCommand> &out) {
@@ -726,7 +887,7 @@ bool RegisterFontInternal(const char *font_id, const unsigned char *ttf_data,
   std::string fontId;
   if (!ReadRequiredString(font_id, kMaxModuleIdLength, "font_id", fontId) ||
       !ttf_data || ttf_size <= 0 || ttf_size > kMaxFontBytes) {
-    preloader_logger.error("Rejected registered font: invalid input or size "
+    preloaderLogger.error("Rejected registered font: invalid input or size "
                            "{}",
                            ttf_size);
     return false;
@@ -757,4 +918,173 @@ bool GetRegisteredFontBytes(const char *font_id,
   return false;
 }
 
+bool RegisterCppModule(const pl::modmenu::ModuleInfo &info) {
+  std::vector<PLModMenu_ConfigEntry> configs;
+  configs.reserve(info.configs.size());
+  for (const auto &config : info.configs) {
+    configs.push_back(PLModMenu_ConfigEntry{
+        .key = config.key.c_str(),
+        .display_name = config.displayName.c_str(),
+        .type = ToLegacyConfigType(config.type),
+        .default_value =
+            config.defaultValue.empty() ? nullptr : config.defaultValue.c_str(),
+        .min_value = config.minValue.empty() ? nullptr : config.minValue.c_str(),
+        .max_value = config.maxValue.empty() ? nullptr : config.maxValue.c_str(),
+        .depends_on =
+            config.dependsOn.empty() ? nullptr : config.dependsOn.c_str(),
+    });
+  }
+
+  if (info.configs.size() >
+      static_cast<size_t>(std::numeric_limits<int>::max())) {
+    return false;
+  }
+
+  const PLModMenu_ModuleInfo legacyInfo{
+      .module_id = info.moduleId.c_str(),
+      .display_name = info.displayName.c_str(),
+      .description = info.description.empty() ? nullptr
+                                              : info.description.c_str(),
+      .mod_id = info.modId.empty() ? nullptr : info.modId.c_str(),
+      .default_enabled = info.defaultEnabled,
+      .on_toggle = nullptr,
+      .config_count = static_cast<int>(configs.size()),
+      .configs = configs.empty() ? nullptr : configs.data(),
+      .on_config_changed = nullptr,
+      .hide_in_hud_editor = info.hideInHudEditor,
+  };
+
+  if (!RegisterModule(&legacyInfo)) {
+    return false;
+  }
+
+  std::lock_guard<std::mutex> lock(g_modMenuMutex);
+  if (info.onToggle) {
+    g_cppToggleCallbacks[info.moduleId] = info.onToggle;
+  }
+  if (info.onConfigChanged) {
+    g_cppConfigChangedCallbacks[info.moduleId] = info.onConfigChanged;
+  }
+  return true;
+}
+
+bool RegisterCppButton(const pl::modmenu::ButtonInfo &info) {
+  if (info.iconData.size() >
+      static_cast<size_t>(std::numeric_limits<int>::max())) {
+    return false;
+  }
+
+  const PLModMenu_ButtonInfo legacyInfo{
+      .button_id = info.buttonId.c_str(),
+      .module_id = info.moduleId.c_str(),
+      .display_name = info.displayName.c_str(),
+      .mod_id = info.modId.empty() ? nullptr : info.modId.c_str(),
+      .label = info.label.empty() ? nullptr : info.label.c_str(),
+      .android_key_code = info.androidKeyCode,
+      .behavior = ToLegacyButtonBehavior(info.behavior),
+      .default_visible = info.defaultVisible,
+      .on_event = nullptr,
+      .preset = ToLegacyButtonStylePreset(info.stylePreset),
+      .normal_bg_color = info.normalBgColor,
+      .active_bg_color = info.activeBgColor,
+      .border_color = info.borderColor,
+      .text_color = info.textColor,
+      .active_text_color = info.activeTextColor,
+      .width_scale = info.widthScale,
+      .height_scale = info.heightScale,
+      .icon_data = info.iconData.empty() ? nullptr : info.iconData.data(),
+      .icon_data_size = static_cast<int>(info.iconData.size()),
+      .icon_format = ToLegacyButtonIconFormat(info.iconFormat),
+      .hide_label_when_icon_present = info.hideLabelWhenIconPresent,
+  };
+
+  if (!RegisterButton(&legacyInfo)) {
+    return false;
+  }
+
+  std::lock_guard<std::mutex> lock(g_modMenuMutex);
+  if (info.onEvent) {
+    g_cppButtonEventCallbacks[info.buttonId] = info.onEvent;
+  }
+  return true;
+}
+
+void SubmitCppDrawCommands(std::string_view moduleId,
+                           std::span<const pl::modmenu::DrawCommand> commands) {
+  if (commands.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+    return;
+  }
+
+  std::vector<PLModMenu_DrawCommand> legacyCommands;
+  legacyCommands.reserve(commands.size());
+  for (const auto &command : commands) {
+    legacyCommands.push_back(PLModMenu_DrawCommand{
+        .type = ToLegacyDrawCommandType(command.type),
+        .x = command.x,
+        .y = command.y,
+        .w = command.w,
+        .h = command.h,
+        .x3 = command.x3,
+        .y3 = command.y3,
+        .color = command.color,
+        .size = command.size,
+        .text = command.text.empty() ? nullptr : command.text.c_str(),
+        .font_id = command.fontId.empty() ? nullptr : command.fontId.c_str(),
+    });
+  }
+
+  const std::string moduleIdString(moduleId);
+  SubmitDrawCommands(moduleIdString.c_str(),
+                     legacyCommands.empty() ? nullptr : legacyCommands.data(),
+                     static_cast<int>(legacyCommands.size()));
+}
+
+bool RegisterCppFont(std::string_view fontId,
+                     std::span<const unsigned char> ttfData) {
+  if (ttfData.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+    return false;
+  }
+  const std::string fontIdString(fontId);
+  return RegisterFontInternal(fontIdString.c_str(), ttfData.data(),
+                              static_cast<int>(ttfData.size()));
+}
+
 } // namespace pl::runtime
+
+namespace pl::modmenu {
+
+bool registerModule(const ModuleInfo &info) {
+  return pl::runtime::RegisterCppModule(info);
+}
+
+void unregisterModule(std::string_view moduleId) {
+  const std::string moduleIdString(moduleId);
+  pl::runtime::GetModMenuInterface()->UnregisterModule(moduleIdString.c_str());
+}
+
+void setModuleEnabled(std::string_view moduleId, bool enabled) {
+  const std::string moduleIdString(moduleId);
+  pl::runtime::GetModMenuInterface()->SetModuleEnabled(moduleIdString.c_str(),
+                                                       enabled);
+}
+
+void submitDrawCommands(std::string_view moduleId,
+                        std::span<const DrawCommand> commands) {
+  pl::runtime::SubmitCppDrawCommands(moduleId, commands);
+}
+
+bool registerFont(std::string_view fontId,
+                  std::span<const unsigned char> ttfData) {
+  return pl::runtime::RegisterCppFont(fontId, ttfData);
+}
+
+bool registerButton(const ButtonInfo &info) {
+  return pl::runtime::RegisterCppButton(info);
+}
+
+void unregisterButton(std::string_view buttonId) {
+  const std::string buttonIdString(buttonId);
+  pl::runtime::GetModMenuInterface()->UnregisterButton(buttonIdString.c_str());
+}
+
+} // namespace pl::modmenu

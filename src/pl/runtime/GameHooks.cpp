@@ -6,11 +6,11 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
-#include "pl/Logger.h"
-#include "pl/c/Hook.h"
-#include "pl/c/Signature.h"
-#include "pl/cpp/Signature.hpp"
+#include "pl/Logger.hpp"
+#include "pl/memory/Hook.hpp"
+#include "pl/memory/Signature.hpp"
 #include "pl/runtime/GameHookRules.h"
 
 namespace pl::runtime {
@@ -71,16 +71,17 @@ uintptr_t ResolveResult(
   return it == results.end() ? 0 : it->second;
 }
 
-bool InstallHook(uintptr_t target, PLFuncPtr detour, PLFuncPtr *original,
+bool InstallHook(uintptr_t target, pl::memory::FuncPtr detour,
+                 pl::memory::FuncPtr *original,
                  const char *name) {
   if (!target) {
-    preloader_logger.warn("Preloader hook target is missing: {}", name);
+    preloaderLogger.warn("Preloader hook target is missing: {}", name);
     return false;
   }
 
-  if (pl_hook(reinterpret_cast<PLFuncPtr>(target), detour, original,
-              PL_HOOK_PRIORITY_NORMAL) != 0) {
-    preloader_logger.warn("Failed to install Preloader hook: {}", name);
+  if (pl::memory::hook(reinterpret_cast<pl::memory::FuncPtr>(target), detour,
+                       original) != 0) {
+    preloaderLogger.warn("Failed to install Preloader hook: {}", name);
     return false;
   }
   return true;
@@ -101,11 +102,12 @@ void InitGameHooks() {
       return;
     }
 
-    auto results = pl::signature::resolveSignatures(
-        {signatures->pauseMenuDtor, signatures->pauseMenuOpen,
-         signatures->hudScreenDtor, signatures->hudScreenOpen,
-         signatures->isShowingMenu},
-        "libminecraftpe.so");
+    const std::vector<std::string> requestedSignatures{
+        signatures->pauseMenuDtor, signatures->pauseMenuOpen,
+        signatures->hudScreenDtor, signatures->hudScreenOpen,
+        signatures->isShowingMenu};
+    auto results = pl::memory::resolveSignatures(
+        requestedSignatures, "libminecraftpe.so");
 
     uintptr_t pauseDtor = ResolveResult(results, signatures->pauseMenuDtor);
     uintptr_t pauseOpen = ResolveResult(results, signatures->pauseMenuOpen);
@@ -115,24 +117,29 @@ void InitGameHooks() {
         ResolveResult(results, signatures->isShowingMenu);
 
     bool hooksReady = true;
-    hooksReady &= InstallHook(pauseDtor, (PLFuncPtr)hook_PauseMenuDtor,
-                              (PLFuncPtr *)&orig_PauseMenuDtor,
+    hooksReady &= InstallHook(pauseDtor,
+                              (pl::memory::FuncPtr)hook_PauseMenuDtor,
+                              (pl::memory::FuncPtr *)&orig_PauseMenuDtor,
                               "PauseMenuDtor");
-    hooksReady &= InstallHook(pauseOpen, (PLFuncPtr)hook_PauseMenuOpen,
-                              (PLFuncPtr *)&orig_PauseMenuOpen,
+    hooksReady &= InstallHook(pauseOpen,
+                              (pl::memory::FuncPtr)hook_PauseMenuOpen,
+                              (pl::memory::FuncPtr *)&orig_PauseMenuOpen,
                               "PauseMenuOpen");
-    hooksReady &= InstallHook(hudDtor, (PLFuncPtr)hook_HudScreenDtor,
-                              (PLFuncPtr *)&orig_HudScreenDtor,
+    hooksReady &= InstallHook(hudDtor,
+                              (pl::memory::FuncPtr)hook_HudScreenDtor,
+                              (pl::memory::FuncPtr *)&orig_HudScreenDtor,
                               "HudScreenDtor");
-    hooksReady &= InstallHook(hudOpen, (PLFuncPtr)hook_HudScreenOpen,
-                              (PLFuncPtr *)&orig_HudScreenOpen,
+    hooksReady &= InstallHook(hudOpen,
+                              (pl::memory::FuncPtr)hook_HudScreenOpen,
+                              (pl::memory::FuncPtr *)&orig_HudScreenOpen,
                               "HudScreenOpen");
-    hooksReady &= InstallHook(isShowingMenuAddr, (PLFuncPtr)hook_isShowingMenu,
-                              (PLFuncPtr *)&orig_isShowingMenu,
+    hooksReady &= InstallHook(isShowingMenuAddr,
+                              (pl::memory::FuncPtr)hook_isShowingMenu,
+                              (pl::memory::FuncPtr *)&orig_isShowingMenu,
                               "isShowingMenu");
 
     if (!hooksReady) {
-      preloader_logger.warn(
+      preloaderLogger.warn(
           "Preloader runtime data is not fully usable; forcing global Mod Menu");
       return;
     }

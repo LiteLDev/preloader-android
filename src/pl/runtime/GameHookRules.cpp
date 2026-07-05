@@ -12,7 +12,7 @@
 
 #include <nlohmann/json.hpp>
 
-#include "pl/Logger.h"
+#include "pl/Logger.hpp"
 
 namespace pl::runtime {
 namespace {
@@ -173,20 +173,20 @@ std::optional<GameHookSignatures> LoadConfiguredGameHookSignatures() {
 
   auto content = ReadTextFile(rulesPath);
   if (!content) {
-    preloader_logger.warn("Preloader runtime data is unavailable: {}",
+    preloaderLogger.warn("Preloader runtime data is unavailable: {}",
                           rulesPath.empty() ? "<empty>" : rulesPath);
     return std::nullopt;
   }
 
   nlohmann::json root = nlohmann::json::parse(*content, nullptr, false);
   if (root.is_discarded() || !root.is_object()) {
-    preloader_logger.warn("Preloader runtime data JSON is invalid");
+    preloaderLogger.warn("Preloader runtime data JSON is invalid");
     return std::nullopt;
   }
 
   auto rulesIt = root.find("rules");
   if (rulesIt == root.end() || !rulesIt->is_array()) {
-    preloader_logger.warn("Preloader runtime data missing rules array");
+    preloaderLogger.warn("Preloader runtime data missing rules array");
     return std::nullopt;
   }
 
@@ -197,14 +197,14 @@ std::optional<GameHookSignatures> LoadConfiguredGameHookSignatures() {
 
     auto signatures = ParseHookSignatures(rule);
     if (signatures) {
-      preloader_logger.info("Loaded Preloader runtime data for Minecraft {}",
+      preloaderLogger.info("Loaded Preloader runtime data for Minecraft {}",
                             minecraftVersion.empty() ? "<unknown>"
                                                      : minecraftVersion);
       return signatures;
     }
   }
 
-  preloader_logger.warn("No valid Preloader runtime data matches Minecraft {}",
+  preloaderLogger.warn("No valid Preloader runtime data matches Minecraft {}",
                         minecraftVersion.empty() ? "<unknown>"
                                                  : minecraftVersion);
   return std::nullopt;
