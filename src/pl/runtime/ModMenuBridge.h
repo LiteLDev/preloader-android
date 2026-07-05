@@ -98,4 +98,9 @@ bool RegisterFontInternal(const char *font_id, const unsigned char *ttf_data,
 bool GetRegisteredFontBytes(const char *font_id,
                             std::vector<unsigned char> &out);
 
+bool RegisterImageInternal(const char *image_id, const unsigned char *image_data,
+                           int width, int height);
+bool GetRegisteredImageBytes(const char *image_id,
+                             std::vector<unsigned char> &out, int &width, int &height);
+
 } // namespace pl::runtime

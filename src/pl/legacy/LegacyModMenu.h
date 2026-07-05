@@ -106,6 +106,7 @@ typedef enum PLModMenu_DrawCommandType {
   PL_DRAW_RECT_FILLED = 3,
   PL_DRAW_CIRCLE_FILLED = 4,
   PL_DRAW_TRIANGLE_FILLED = 5,
+  PL_DRAW_IMAGE = 6,
 } PLModMenu_DrawCommandType;
 
 typedef struct PLModMenu_DrawCommand {
@@ -127,6 +128,8 @@ typedef struct PLModMenu_Interface {
                              int count);
   bool (*RegisterFont)(const char *font_id, const unsigned char *ttf_data,
                        int ttf_size);
+  bool (*RegisterImage)(const char *image_id, const unsigned char *image_data,
+                        int width, int height);
   bool (*RegisterButton)(const PLModMenu_ButtonInfo *info);
   void (*UnregisterButton)(const char *button_id);
 } PLModMenu_Interface;

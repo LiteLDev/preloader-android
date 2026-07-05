@@ -660,6 +660,7 @@ PLModMenu_Interface g_modMenuInterface = {
     .SetModuleEnabled = SetModuleEnabled,
     .SubmitDrawCommands = SubmitDrawCommands,
     .RegisterFont = RegisterFontInternal,
+    .RegisterImage = RegisterImageInternal,
     .RegisterButton = RegisterButton,
     .UnregisterButton = UnregisterButton,
 };
@@ -916,6 +917,19 @@ bool GetRegisteredFontBytes(const char *font_id,
     }
   }
   return false;
+}
+
+bool RegisterImageInternal(const char *image_id, const unsigned char *image_data,
+                           int width, int height) {
+  if (width <= 0 || height <= 0 || !image_data) return false;
+  int size = width * height * 4;
+  return RegisterFontInternal(image_id, image_data, size);
+}
+
+bool GetRegisteredImageBytes(const char *image_id,
+                             std::vector<unsigned char> &out, int &width, int &height) {
+  // Not used natively but declared in header
+  return GetRegisteredFontBytes(image_id, out);
 }
 
 bool RegisterCppModule(const pl::modmenu::ModuleInfo &info) {
