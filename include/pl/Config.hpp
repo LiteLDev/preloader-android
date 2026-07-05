@@ -20,6 +20,10 @@
 #include <magic_enum/magic_enum.hpp>
 #include <nlohmann/json.hpp>
 
+#ifndef PL_CONFIG_NO_RUNTIME
+#include "pl/Mod.hpp"
+#endif
+
 namespace pl::reflection {
 
 namespace detail {
@@ -296,6 +300,12 @@ template <typename T> nlohmann::ordered_json schemaForValue(const T &value) {
 
 template <typename T>
 void logWarning(const std::filesystem::path &path, const T &message) {
+#ifndef PL_CONFIG_NO_RUNTIME
+  if (const auto mod = pl::mod::NativeMod::current()) {
+    mod->getLogger().warn("Config {}: {}", path.string(), message);
+    return;
+  }
+#endif
   (void)path;
   (void)message;
 }
@@ -303,9 +313,19 @@ void logWarning(const std::filesystem::path &path, const T &message) {
 } // namespace detail
 
 /**
- * @brief Returns the default config path when no explicit path is provided.
+ * @brief Returns the default config path when no explicit path is
+ * provided.
  */
-inline std::filesystem::path defaultConfigPath() { return {}; }
+inline std::filesystem::path defaultConfigPath() {
+#ifdef PL_CONFIG_NO_RUNTIME
+  return {};
+#else
+  const auto mod = pl::mod::NativeMod::current();
+  if (!mod)
+    return {};
+  return mod->getConfigDir() / "config.json";
+#endif
+}
 
 /**
  * @brief Returns the default schema path next to the default config file.

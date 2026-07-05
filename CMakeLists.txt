@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(PRELOADER_SOURCES
+        src/pl/Mod.cpp
         src/pl/PreLoader.cpp
         src/pl/internal/ModManager.cpp
         src/pl/legacy/LegacyHook.cpp

@@ -19,8 +19,7 @@
 
 namespace pl::mod {
 
-inline constexpr const char *ModRegistrationSymbol =
-    "PLGetModRegistration";
+inline constexpr const char *ModRegistrationSymbol = "PLGetModRegistration";
 
 /**
  * @brief Manifest and filesystem metadata resolved by the preloader.
@@ -80,6 +79,101 @@ private:
   }
 };
 
+/**
+ * @brief Runtime mod object for the currently executing native mod.
+ */
+class NativeMod {
+public:
+  enum class State {
+    Unloaded,
+    Loaded,
+    Enabled,
+  };
+
+  NativeMod(JavaVM *javaVm, ModInfo info)
+      : mJavaVm(javaVm), mInfo(std::move(info)),
+        mDataDir(mInfo.modRootPath / "data"),
+        mConfigDir(mInfo.modRootPath / "config"),
+        mResourceDir(mInfo.modRootPath / "resources"),
+        mLogger(&pl::log::Logger::getOrCreate(mInfo.displayName.empty()
+                                                  ? fallbackName(mInfo.id)
+                                                  : mInfo.displayName)) {}
+
+  [[nodiscard]] State getState() const noexcept { return mState; }
+  [[nodiscard]] bool isEnabled() const noexcept {
+    return mState == State::Enabled;
+  }
+  [[nodiscard]] bool isLoaded() const noexcept {
+    return mState == State::Loaded;
+  }
+  [[nodiscard]] bool isUnloaded() const noexcept {
+    return mState == State::Unloaded;
+  }
+  [[nodiscard]] bool isDisabled() const noexcept {
+    return mState != State::Enabled;
+  }
+
+  [[nodiscard]] const std::string &getId() const noexcept { return mInfo.id; }
+  [[nodiscard]] const std::string &getName() const noexcept {
+    return mInfo.displayName;
+  }
+  [[nodiscard]] const std::string &getAuthor() const noexcept {
+    return mInfo.author;
+  }
+  [[nodiscard]] const std::string &getVersion() const noexcept {
+    return mInfo.version;
+  }
+  [[nodiscard]] const std::filesystem::path &getEntryPath() const noexcept {
+    return mInfo.entryPath;
+  }
+  [[nodiscard]] const std::string &getEntryFileName() const noexcept {
+    return mInfo.entryFileName;
+  }
+  [[nodiscard]] const std::filesystem::path &getIconPath() const noexcept {
+    return mInfo.iconPath;
+  }
+  [[nodiscard]] const std::filesystem::path &getModDir() const noexcept {
+    return mInfo.modRootPath;
+  }
+  [[nodiscard]] const std::filesystem::path &getDataDir() const noexcept {
+    return mDataDir;
+  }
+  [[nodiscard]] const std::filesystem::path &getConfigDir() const noexcept {
+    return mConfigDir;
+  }
+  [[nodiscard]] const std::filesystem::path &getResourceDir() const noexcept {
+    return mResourceDir;
+  }
+  [[nodiscard]] const std::filesystem::path &getManifestPath() const noexcept {
+    return mInfo.manifestPath;
+  }
+  [[nodiscard]] const std::filesystem::path &getLibraryPath() const noexcept {
+    return mInfo.libraryPath;
+  }
+  [[nodiscard]] JavaVM *getJavaVM() const noexcept { return mJavaVm; }
+  [[nodiscard]] pl::log::Logger &getLogger() const noexcept { return *mLogger; }
+
+  /**
+   * @brief Returns the mod currently being registered or executing lifecycle.
+   */
+  [[nodiscard]] PL_EXPORT static NativeMod *current() noexcept;
+
+  void setState(State state) noexcept { mState = state; }
+
+private:
+  JavaVM *mJavaVm{};
+  ModInfo mInfo;
+  std::filesystem::path mDataDir;
+  std::filesystem::path mConfigDir;
+  std::filesystem::path mResourceDir;
+  pl::log::Logger *mLogger{};
+  State mState{State::Unloaded};
+
+  [[nodiscard]] static std::string fallbackName(const std::string &id) {
+    return id.empty() ? "LeviMod" : id;
+  }
+};
+
 using LifecycleFunction = bool (*)(void *instance, ModContext &context);
 
 /**
@@ -96,48 +190,92 @@ struct ModRegistration {
 namespace detail {
 
 template <typename T>
-concept Loadable = requires(T t, ModContext &context) {
+concept LoadableWithContext = requires(T t, ModContext &context) {
   { t.load(context) } -> std::same_as<bool>;
 };
 
 template <typename T>
-concept Enableable = requires(T t, ModContext &context) {
+concept LoadableWithoutContext = requires(T t) {
+  { t.load() } -> std::same_as<bool>;
+};
+
+template <typename T>
+concept Loadable = LoadableWithContext<T> || LoadableWithoutContext<T>;
+
+template <typename T>
+concept EnableableWithContext = requires(T t, ModContext &context) {
   { t.enable(context) } -> std::same_as<bool>;
 };
 
 template <typename T>
-concept Disableable = requires(T t, ModContext &context) {
+concept EnableableWithoutContext = requires(T t) {
+  { t.enable() } -> std::same_as<bool>;
+};
+
+template <typename T>
+concept DisableableWithContext = requires(T t, ModContext &context) {
   { t.disable(context) } -> std::same_as<bool>;
 };
 
 template <typename T>
-concept Unloadable = requires(T t, ModContext &context) {
+concept DisableableWithoutContext = requires(T t) {
+  { t.disable() } -> std::same_as<bool>;
+};
+
+template <typename T>
+concept UnloadableWithContext = requires(T t, ModContext &context) {
   { t.unload(context) } -> std::same_as<bool>;
 };
 
+template <typename T>
+concept UnloadableWithoutContext = requires(T t) {
+  { t.unload() } -> std::same_as<bool>;
+};
+
+class ScopedCurrentMod {
+public:
+  explicit ScopedCurrentMod(NativeMod *current) noexcept;
+  ScopedCurrentMod(const ScopedCurrentMod &) = delete;
+  ScopedCurrentMod &operator=(const ScopedCurrentMod &) = delete;
+  ~ScopedCurrentMod();
+
+private:
+  NativeMod *mPrevious{};
+};
+
 template <typename T> bool load(void *instance, ModContext &context) {
-  return static_cast<T *>(instance)->load(context);
+  if constexpr (LoadableWithContext<T>) {
+    return static_cast<T *>(instance)->load(context);
+  } else {
+    return static_cast<T *>(instance)->load();
+  }
 }
 
 template <typename T> bool enable(void *instance, ModContext &context) {
-  if constexpr (Enableable<T>) {
+  if constexpr (EnableableWithContext<T>) {
     return static_cast<T *>(instance)->enable(context);
+  } else if constexpr (EnableableWithoutContext<T>) {
+    return static_cast<T *>(instance)->enable();
   } else {
     return true;
   }
 }
 
 template <typename T> bool disable(void *instance, ModContext &context) {
-  if constexpr (Disableable<T>) {
+  if constexpr (DisableableWithContext<T>) {
     return static_cast<T *>(instance)->disable(context);
+  } else if constexpr (DisableableWithoutContext<T>) {
+    return static_cast<T *>(instance)->disable();
   } else {
     return true;
   }
 }
 
 template <typename T> bool unload(void *instance, ModContext &context) {
-  if constexpr (Unloadable<T>) {
+  if constexpr (UnloadableWithContext<T>) {
     return static_cast<T *>(instance)->unload(context);
+  } else if constexpr (UnloadableWithoutContext<T>) {
+    return static_cast<T *>(instance)->unload();
   } else {
     return true;
   }
@@ -165,6 +303,13 @@ template <typename T> T &materializeModInstance(T &&instance) {
 } // namespace detail
 
 } // namespace pl::mod
+
+namespace ll::mod {
+using ModContext = ::pl::mod::ModContext;
+using ModInfo = ::pl::mod::ModInfo;
+using ModRegistration = ::pl::mod::ModRegistration;
+using NativeMod = ::pl::mod::NativeMod;
+} // namespace ll::mod
 
 extern "C" {
 
