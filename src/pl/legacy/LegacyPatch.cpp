@@ -2,15 +2,41 @@
 
 #include <cstring>
 #include <span>
+#include <string>
 #include <vector>
 
 #include "pl/memory/Patch.hpp"
 
+namespace pl::patch {
+
+PL_LEGACY_EXPORT bool writeBytes(uintptr_t addr,
+                                 const std::vector<uint8_t> &bytes,
+                                 const std::string &name) {
+  return pl::memory::writeBytes(
+      addr, std::span<const uint8_t>(bytes.data(), bytes.size()), name);
+}
+
+PL_LEGACY_EXPORT bool writeBytes(uintptr_t addr, const std::string &bytes,
+                                 const std::string &name) {
+  return pl::memory::writeBytes(addr, bytes, name);
+}
+
+PL_LEGACY_EXPORT std::vector<uint8_t> readBytes(uintptr_t addr, size_t len) {
+  return pl::memory::readBytes(addr, len);
+}
+
+PL_LEGACY_EXPORT bool revert(const std::string &name) {
+  return pl::memory::revertPatch(name);
+}
+
+PL_LEGACY_EXPORT void revertAll() { pl::memory::revertAllPatches(); }
+
+} // namespace pl::patch
+
 extern "C" {
 
-PL_LEGACY_EXPORT bool pl_patch_write_bytes(uintptr_t addr,
-                                           const uint8_t *bytes, size_t len,
-                                           const char *name) {
+PL_LEGACY_EXPORT bool pl_patch_write_bytes(uintptr_t addr, const uint8_t *bytes,
+                                           size_t len, const char *name) {
   if (bytes == nullptr || name == nullptr || len == 0) {
     return false;
   }
