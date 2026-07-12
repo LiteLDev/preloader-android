@@ -13,9 +13,11 @@ namespace {
 
 std::vector<PreloaderInput_OnTouch_Fn> g_touchCallbacks;
 std::vector<PreloaderInput_OnKeyEvent_Fn> g_keyEventCallbacks;
+std::vector<PreloaderInput_OnTextInput_Fn> g_textInputCallbacks;
 std::vector<PreloaderInput_OnMouse_Fn> g_mouseCallbacks;
 std::vector<pl::input::TouchCallback> g_cppTouchCallbacks;
 std::vector<pl::input::KeyCallback> g_cppKeyCallbacks;
+std::vector<pl::input::TextInputCallback> g_cppTextInputCallbacks;
 std::vector<pl::input::MouseCallback> g_cppMouseCallbacks;
 std::mutex g_callbackMutex;
 
@@ -27,6 +29,11 @@ void RegisterLegacyTouchCallback(PreloaderInput_OnTouch_Fn callback) {
 void RegisterLegacyKeyEventCallback(PreloaderInput_OnKeyEvent_Fn callback) {
   std::lock_guard<std::mutex> lock(g_callbackMutex);
   g_keyEventCallbacks.push_back(callback);
+}
+
+void RegisterLegacyTextInputCallback(PreloaderInput_OnTextInput_Fn callback) {
+  std::lock_guard<std::mutex> lock(g_callbackMutex);
+  g_textInputCallbacks.push_back(callback);
 }
 
 void RegisterLegacyMouseCallback(PreloaderInput_OnMouse_Fn callback) {
@@ -44,6 +51,7 @@ PreloaderInput_Interface g_inputInterface = {
     .ShowKeyboard = ShowKeyboardImpl,
     .HideKeyboard = HideKeyboardImpl,
     .RegisterMouseCallback = RegisterLegacyMouseCallback,
+    .RegisterTextInputCallback = RegisterLegacyTextInputCallback,
 };
 
 } // namespace
@@ -107,6 +115,30 @@ bool DispatchKeyEvent(int keyCode, unsigned int unicodeChar, bool isKeyDown) {
   return consumed;
 }
 
+bool DispatchTextInput(std::string text) {
+  std::vector<PreloaderInput_OnTextInput_Fn> legacyCallbacks;
+  std::vector<pl::input::TextInputCallback> cppCallbacks;
+  {
+    std::lock_guard<std::mutex> lock(g_callbackMutex);
+    legacyCallbacks = g_textInputCallbacks;
+    cppCallbacks = g_cppTextInputCallbacks;
+  }
+
+  bool consumed = false;
+  for (auto callback : legacyCallbacks) {
+    if (callback) {
+      consumed |= callback(text.data(), text.size());
+    }
+  }
+  const pl::input::TextInputEvent event{.text = std::move(text)};
+  for (const auto &callback : cppCallbacks) {
+    if (callback) {
+      consumed |= callback(event);
+    }
+  }
+  return consumed;
+}
+
 bool DispatchMouse(int button, bool isDown) {
   std::vector<PreloaderInput_OnMouse_Fn> legacyCallbacks;
   std::vector<pl::input::MouseCallback> cppCallbacks;
@@ -141,6 +173,11 @@ void RegisterCppKeyCallback(pl::input::KeyCallback callback) {
   g_cppKeyCallbacks.push_back(std::move(callback));
 }
 
+void RegisterCppTextInputCallback(pl::input::TextInputCallback callback) {
+  std::lock_guard<std::mutex> lock(g_callbackMutex);
+  g_cppTextInputCallbacks.push_back(std::move(callback));
+}
+
 void RegisterCppMouseCallback(pl::input::MouseCallback callback) {
   std::lock_guard<std::mutex> lock(g_callbackMutex);
   g_cppMouseCallbacks.push_back(std::move(callback));
@@ -160,6 +197,10 @@ void registerTouchCallback(TouchCallback callback) {
 
 void registerKeyCallback(KeyCallback callback) {
   pl::runtime::RegisterCppKeyCallback(std::move(callback));
+}
+
+void registerTextInputCallback(TextInputCallback callback) {
+  pl::runtime::RegisterCppTextInputCallback(std::move(callback));
 }
 
 void registerMouseCallback(MouseCallback callback) {

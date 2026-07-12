@@ -6,6 +6,7 @@
  */
 
 #include <functional>
+#include <string>
 
 #include "pl/Export.hpp"
 
@@ -31,6 +32,13 @@ struct KeyEvent {
 };
 
 /**
+ * @brief Text committed by an input method.
+ */
+struct TextInputEvent {
+  std::string text;
+};
+
+/**
  * @brief Mouse button event delivered from the Android view.
  */
 struct MouseEvent {
@@ -40,6 +48,7 @@ struct MouseEvent {
 
 using TouchCallback = std::function<bool(const TouchEvent &)>;
 using KeyCallback = std::function<bool(const KeyEvent &)>;
+using TextInputCallback = std::function<bool(const TextInputEvent &)>;
 using MouseCallback = std::function<bool(const MouseEvent &)>;
 
 /**
@@ -51,6 +60,11 @@ PL_EXPORT void registerTouchCallback(TouchCallback callback);
  * @brief Registers a process-wide key callback.
  */
 PL_EXPORT void registerKeyCallback(KeyCallback callback);
+
+/**
+ * @brief Registers a process-wide committed text callback.
+ */
+PL_EXPORT void registerTextInputCallback(TextInputCallback callback);
 
 /**
  * @brief Registers a process-wide mouse callback.
