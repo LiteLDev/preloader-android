@@ -134,6 +134,7 @@ namespace pl::modmenu {
         ButtonIconFormat iconFormat{ButtonIconFormat::Auto};
         bool hideLabelWhenIconPresent{true};
         std::vector<unsigned char> iconData;
+        std::vector<unsigned char> activeIconData;
         std::function<void(std::string_view buttonId, ButtonEvent event, float value)>
         onEvent;
     };
@@ -367,6 +368,11 @@ namespace pl::modmenu {
             mInfo.iconFormat = ButtonIconFormat::Resource;
             mInfo.hideLabelWhenIconPresent = hideLabelWhenPresent;
             mInfo.iconData.assign(resourceName.begin(), resourceName.end());
+            return *this;
+        }
+
+        ButtonBuilder &activeSvgIcon(std::string svg) {
+            mInfo.activeIconData.assign(svg.begin(), svg.end());
             return *this;
         }
 

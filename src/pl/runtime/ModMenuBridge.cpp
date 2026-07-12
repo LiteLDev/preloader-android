@@ -577,6 +577,7 @@ namespace pl::runtime {
             entry.icon_format = InferButtonIconFormat(iconData, info.iconFormat);
             entry.hide_label_when_icon_present = info.hideLabelWhenIconPresent;
             entry.icon_data = std::move(iconData);
+            entry.active_icon_data = info.activeIconData;
             entry.on_event = info.onEvent;
             g_registeredButtons.push_back(std::move(entry));
             return true;
@@ -720,226 +721,228 @@ namespace pl::runtime {
                 if (button.button_id == button_id) {
                     iconData = button.icon_data;
                     iconFormat = button.icon_format;
-                    break;
+                    std::lock_guard<std::mutex> lock(g_modMenuMutex);
+                    for (const auto &btn : g_registeredButtons) {
+                        if (btn.button_id == buttonId) {
+                            const auto &data = (active && !btn.active_icon_data.empty()) ? btn.active_icon_data : btn.icon_data;
+                            if (data.empty())
+                                return false;
+
+                            auto iconFormat = InferButtonIconFormat(data, btn.icon_format);
+
+                            if (iconFormat == pl::modmenu::ButtonIconFormat::Svg) {
+                                return RenderSvgIconToPng(data, width, height, out);
+                            }
+                            out = data;
+                            return true;
+                        }
+                    }
+                    return false;
                 }
-            }
-        }
 
-        if (iconData.empty())
-            return false;
+                void DispatchRegisteredButtonEvent(const char *button_id,
+                                                   pl::modmenu::ButtonEvent event, float value) {
+                    if (!button_id || !IsValidButtonEvent(event))
+                        return;
 
-        iconFormat = InferButtonIconFormat(iconData, iconFormat);
-        if (iconFormat == pl::modmenu::ButtonIconFormat::Svg) {
-            return RenderSvgIconToPng(iconData, width, height, out);
-        }
-
-        out = std::move(iconData);
-        return !out.empty();
-    }
-
-    void DispatchRegisteredButtonEvent(const char *button_id,
-                                       pl::modmenu::ButtonEvent event, float value) {
-        if (!button_id || !IsValidButtonEvent(event))
-            return;
-
-        std::function<void(std::string_view, pl::modmenu::ButtonEvent, float)>
-                callback;
-        {
-            std::lock_guard<std::mutex> lock(g_modMenuMutex);
-            for (const auto &button : g_registeredButtons) {
-                if (button.button_id == button_id) {
-                    callback = button.on_event;
-                    break;
+                    std::function<void(std::string_view, pl::modmenu::ButtonEvent, float)>
+                            callback;
+                    {
+                        std::lock_guard<std::mutex> lock(g_modMenuMutex);
+                        for (const auto &button : g_registeredButtons) {
+                            if (button.button_id == button_id) {
+                                callback = button.on_event;
+                                break;
+                            }
+                        }
+                    }
+                    if (callback)
+                        callback(button_id, event, value);
                 }
-            }
-        }
-        if (callback)
-            callback(button_id, event, value);
-    }
 
-    void GetDrawCommands(std::vector<InternalDrawCommand> &out) {
-        std::lock_guard<std::mutex> lock(g_modMenuMutex);
-        size_t commandCount = 0;
-        for (const auto &mod : g_registeredModules) {
-            if (mod.enabled)
-                commandCount += mod.draw_commands.size();
-        }
-        out.reserve(out.size() + commandCount);
-        for (const auto &mod : g_registeredModules) {
-            if (mod.enabled && !mod.draw_commands.empty()) {
-                out.insert(out.end(), mod.draw_commands.begin(), mod.draw_commands.end());
-            }
-        }
-    }
+                void GetDrawCommands(std::vector<InternalDrawCommand> &out) {
+                    std::lock_guard<std::mutex> lock(g_modMenuMutex);
+                    size_t commandCount = 0;
+                    for (const auto &mod : g_registeredModules) {
+                        if (mod.enabled)
+                            commandCount += mod.draw_commands.size();
+                    }
+                    out.reserve(out.size() + commandCount);
+                    for (const auto &mod : g_registeredModules) {
+                        if (mod.enabled && !mod.draw_commands.empty()) {
+                            out.insert(out.end(), mod.draw_commands.begin(), mod.draw_commands.end());
+                        }
+                    }
+                }
 
-    bool RegisterFontInternal(const char *font_id, const unsigned char *ttf_data,
-                              int ttf_size) {
-        std::string fontId;
-        if (!ReadRequiredString(font_id, kMaxModuleIdLength, "font_id", fontId) ||
-            !ttf_data || ttf_size <= 0 || ttf_size > kMaxFontBytes) {
-            preloaderLogger.error("Rejected registered font: invalid input or size "
-                                  "{}",
-                                  ttf_size);
-            return false;
-        }
-        std::lock_guard<std::mutex> lock(g_modMenuMutex);
-        for (auto &f : g_registeredFonts) {
-            if (f.font_id == fontId)
-                return false; // Already registered
-        }
-        RegisteredFont f;
-        f.font_id = std::move(fontId);
-        f.data.assign(ttf_data, ttf_data + ttf_size);
-        g_registeredFonts.push_back(std::move(f));
-        return true;
-    }
+                bool RegisterFontInternal(const char *font_id, const unsigned char *ttf_data,
+                                          int ttf_size) {
+                    std::string fontId;
+                    if (!ReadRequiredString(font_id, kMaxModuleIdLength, "font_id", fontId) ||
+                        !ttf_data || ttf_size <= 0 || ttf_size > kMaxFontBytes) {
+                        preloaderLogger.error("Rejected registered font: invalid input or size "
+                                              "{}",
+                                              ttf_size);
+                        return false;
+                    }
+                    std::lock_guard<std::mutex> lock(g_modMenuMutex);
+                    for (auto &f : g_registeredFonts) {
+                        if (f.font_id == fontId)
+                            return false; // Already registered
+                    }
+                    RegisteredFont f;
+                    f.font_id = std::move(fontId);
+                    f.data.assign(ttf_data, ttf_data + ttf_size);
+                    g_registeredFonts.push_back(std::move(f));
+                    return true;
+                }
 
-    bool GetRegisteredFontBytes(const char *font_id,
-                                std::vector<unsigned char> &out) {
-        if (!font_id)
-            return false;
-        std::lock_guard<std::mutex> lock(g_modMenuMutex);
-        for (const auto &f : g_registeredFonts) {
-            if (f.font_id == font_id) {
-                out = f.data;
-                return true;
-            }
-        }
-        return false;
-    }
+                bool GetRegisteredFontBytes(const char *font_id,
+                                            std::vector<unsigned char> &out) {
+                    if (!font_id)
+                        return false;
+                    std::lock_guard<std::mutex> lock(g_modMenuMutex);
+                    for (const auto &f : g_registeredFonts) {
+                        if (f.font_id == font_id) {
+                            out = f.data;
+                            return true;
+                        }
+                    }
+                    return false;
+                }
 
-    bool RegisterImageInternal(const char *image_id, const unsigned char *image_data,
-                               int width, int height) {
-        std::string imageId;
-        if (!ReadRequiredString(image_id, kMaxModuleIdLength, "image_id", imageId) ||
-            width <= 0 || height <= 0 || !image_data) {
-            return false;
-        }
+                bool RegisterImageInternal(const char *image_id, const unsigned char *image_data,
+                                           int width, int height) {
+                    std::string imageId;
+                    if (!ReadRequiredString(image_id, kMaxModuleIdLength, "image_id", imageId) ||
+                        width <= 0 || height <= 0 || !image_data) {
+                        return false;
+                    }
 
-        const auto imageWidth = static_cast<size_t>(width);
-        const auto imageHeight = static_cast<size_t>(height);
-        const auto maxInt = static_cast<size_t>(std::numeric_limits<int>::max());
-        if (imageWidth > maxInt / imageHeight) {
-            return false;
-        }
-        const size_t pixelCount = imageWidth * imageHeight;
-        if (pixelCount > maxInt / 4) {
-            return false;
-        }
+                    const auto imageWidth = static_cast<size_t>(width);
+                    const auto imageHeight = static_cast<size_t>(height);
+                    const auto maxInt = static_cast<size_t>(std::numeric_limits<int>::max());
+                    if (imageWidth > maxInt / imageHeight) {
+                        return false;
+                    }
+                    const size_t pixelCount = imageWidth * imageHeight;
+                    if (pixelCount > maxInt / 4) {
+                        return false;
+                    }
 
-        const size_t byteCount = pixelCount * 4;
-        std::lock_guard<std::mutex> lock(g_modMenuMutex);
-        for (const auto &image : g_registeredImages) {
-            if (image.image_id == imageId) {
-                return false;
-            }
-        }
+                    const size_t byteCount = pixelCount * 4;
+                    std::lock_guard<std::mutex> lock(g_modMenuMutex);
+                    for (const auto &image : g_registeredImages) {
+                        if (image.image_id == imageId) {
+                            return false;
+                        }
+                    }
 
-        RegisteredImage image;
-        image.image_id = std::move(imageId);
-        image.data.assign(image_data, image_data + byteCount);
-        image.width = width;
-        image.height = height;
-        g_registeredImages.push_back(std::move(image));
-        return true;
-    }
+                    RegisteredImage image;
+                    image.image_id = std::move(imageId);
+                    image.data.assign(image_data, image_data + byteCount);
+                    image.width = width;
+                    image.height = height;
+                    g_registeredImages.push_back(std::move(image));
+                    return true;
+                }
 
-    bool GetRegisteredImageBytes(const char *image_id,
-                                 std::vector<unsigned char> &out, int &width, int &height) {
-        if (!image_id) {
-            return false;
-        }
-        std::lock_guard<std::mutex> lock(g_modMenuMutex);
-        for (const auto &image : g_registeredImages) {
-            if (image.image_id == image_id) {
-                out = image.data;
-                width = image.width;
-                height = image.height;
-                return true;
-            }
-        }
-        return false;
-    }
+                bool GetRegisteredImageBytes(const char *image_id,
+                                             std::vector<unsigned char> &out, int &width, int &height) {
+                    if (!image_id) {
+                        return false;
+                    }
+                    std::lock_guard<std::mutex> lock(g_modMenuMutex);
+                    for (const auto &image : g_registeredImages) {
+                        if (image.image_id == image_id) {
+                            out = image.data;
+                            width = image.width;
+                            height = image.height;
+                            return true;
+                        }
+                    }
+                    return false;
+                }
 
-    bool RegisterCppFont(std::string_view fontId,
-                         std::span<const unsigned char> ttfData) {
-        if (ttfData.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
-            return false;
-        }
-        const std::string fontIdString(fontId);
-        return RegisterFontInternal(fontIdString.c_str(), ttfData.data(),
-                                    static_cast<int>(ttfData.size()));
-    }
+                bool RegisterCppFont(std::string_view fontId,
+                                     std::span<const unsigned char> ttfData) {
+                    if (ttfData.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+                        return false;
+                    }
+                    const std::string fontIdString(fontId);
+                    return RegisterFontInternal(fontIdString.c_str(), ttfData.data(),
+                                                static_cast<int>(ttfData.size()));
+                }
 
-    bool RegisterCppImage(std::string_view imageId,
-                          std::span<const unsigned char> imageData, int width,
-                          int height) {
-        if (width <= 0 || height <= 0) {
-            return false;
-        }
+                bool RegisterCppImage(std::string_view imageId,
+                                      std::span<const unsigned char> imageData, int width,
+                                      int height) {
+                    if (width <= 0 || height <= 0) {
+                        return false;
+                    }
 
-        const auto imageWidth = static_cast<size_t>(width);
-        const auto imageHeight = static_cast<size_t>(height);
-        const auto maxInt = static_cast<size_t>(std::numeric_limits<int>::max());
-        if (imageWidth > maxInt / imageHeight) {
-            return false;
-        }
-        const size_t pixelCount = imageWidth * imageHeight;
-        if (pixelCount > maxInt / 4) {
-            return false;
-        }
+                    const auto imageWidth = static_cast<size_t>(width);
+                    const auto imageHeight = static_cast<size_t>(height);
+                    const auto maxInt = static_cast<size_t>(std::numeric_limits<int>::max());
+                    if (imageWidth > maxInt / imageHeight) {
+                        return false;
+                    }
+                    const size_t pixelCount = imageWidth * imageHeight;
+                    if (pixelCount > maxInt / 4) {
+                        return false;
+                    }
 
-        const size_t byteCount = pixelCount * 4;
-        if (imageData.size() != byteCount) {
-            return false;
-        }
+                    const size_t byteCount = pixelCount * 4;
+                    if (imageData.size() != byteCount) {
+                        return false;
+                    }
 
-        const std::string imageIdString(imageId);
-        return RegisterImageInternal(imageIdString.c_str(), imageData.data(), width,
-                                     height);
-    }
+                    const std::string imageIdString(imageId);
+                    return RegisterImageInternal(imageIdString.c_str(), imageData.data(), width,
+                                                 height);
+                }
 
-} // namespace pl::runtime
+            } // namespace pl::runtime
 
-namespace pl::modmenu {
+            namespace pl::modmenu {
 
-    bool registerModule(const ModuleInfo &info) {
-        return pl::runtime::RegisterCppModule(info);
-    }
+                bool registerModule(const ModuleInfo &info) {
+                    return pl::runtime::RegisterCppModule(info);
+                }
 
-    void unregisterModule(std::string_view moduleId) {
-        const std::string moduleIdString(moduleId);
-        pl::runtime::UnregisterModule(moduleIdString.c_str());
-    }
+                void unregisterModule(std::string_view moduleId) {
+                    const std::string moduleIdString(moduleId);
+                    pl::runtime::UnregisterModule(moduleIdString.c_str());
+                }
 
-    void setModuleEnabled(std::string_view moduleId, bool enabled) {
-        const std::string moduleIdString(moduleId);
-        pl::runtime::ToggleRegisteredModule(moduleIdString.c_str(), enabled);
-    }
+                void setModuleEnabled(std::string_view moduleId, bool enabled) {
+                    const std::string moduleIdString(moduleId);
+                    pl::runtime::ToggleRegisteredModule(moduleIdString.c_str(), enabled);
+                }
 
-    void submitDrawCommands(std::string_view moduleId,
-                            std::span<const DrawCommand> commands) {
-        pl::runtime::SubmitCppDrawCommands(moduleId, commands);
-    }
+                void submitDrawCommands(std::string_view moduleId,
+                                        std::span<const DrawCommand> commands) {
+                    pl::runtime::SubmitCppDrawCommands(moduleId, commands);
+                }
 
-    bool registerFont(std::string_view fontId,
-                      std::span<const unsigned char> ttfData) {
-        return pl::runtime::RegisterCppFont(fontId, ttfData);
-    }
+                bool registerFont(std::string_view fontId,
+                                  std::span<const unsigned char> ttfData) {
+                    return pl::runtime::RegisterCppFont(fontId, ttfData);
+                }
 
-    bool registerImage(std::string_view imageId,
-                       std::span<const unsigned char> imageData, int width,
-                       int height) {
-        return pl::runtime::RegisterCppImage(imageId, imageData, width, height);
-    }
+                bool registerImage(std::string_view imageId,
+                                   std::span<const unsigned char> imageData, int width,
+                                   int height) {
+                    return pl::runtime::RegisterCppImage(imageId, imageData, width, height);
+                }
 
-    bool registerButton(const ButtonInfo &info) {
-        return pl::runtime::RegisterCppButton(info);
-    }
+                bool registerButton(const ButtonInfo &info) {
+                    return pl::runtime::RegisterCppButton(info);
+                }
 
-    void unregisterButton(std::string_view buttonId) {
-        const std::string buttonIdString(buttonId);
-        pl::runtime::UnregisterButton(buttonIdString.c_str());
-    }
+                void unregisterButton(std::string_view buttonId) {
+                    const std::string buttonIdString(buttonId);
+                    pl::runtime::UnregisterButton(buttonIdString.c_str());
+                }
 
-} // namespace pl::modmenu
+            } // namespace pl::modmenu
