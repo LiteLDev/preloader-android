@@ -162,6 +162,7 @@ namespace pl::runtime {
                 case pl::modmenu::ButtonIconFormat::Png:
                 case pl::modmenu::ButtonIconFormat::Webp:
                 case pl::modmenu::ButtonIconFormat::Svg:
+                case pl::modmenu::ButtonIconFormat::Resource:
                     return true;
             }
             return false;
