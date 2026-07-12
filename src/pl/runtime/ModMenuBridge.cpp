@@ -132,6 +132,7 @@ namespace pl::runtime {
                 case pl::modmenu::ConfigType::Radio:
                 case pl::modmenu::ConfigType::Color:
                 case pl::modmenu::ConfigType::Keybind:
+                case pl::modmenu::ConfigType::Text:
                     return true;
             }
             return false;

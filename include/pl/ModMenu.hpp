@@ -27,6 +27,7 @@ namespace pl::modmenu {
         Radio,
         Color,
         Keybind,
+        Text,
     };
 
 /**
