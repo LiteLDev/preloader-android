@@ -65,6 +65,7 @@ namespace pl::modmenu {
         Png,
         Webp,
         Svg,
+        Resource,
     };
 
 /**
@@ -359,6 +360,13 @@ namespace pl::modmenu {
             mInfo.iconFormat = ButtonIconFormat::Svg;
             mInfo.hideLabelWhenIconPresent = hideLabelWhenPresent;
             mInfo.iconData.assign(svg.begin(), svg.end());
+            return *this;
+        }
+
+        ButtonBuilder &resourceIcon(std::string resourceName, bool hideLabelWhenPresent = true) {
+            mInfo.iconFormat = ButtonIconFormat::Resource;
+            mInfo.hideLabelWhenIconPresent = hideLabelWhenPresent;
+            mInfo.iconData.assign(resourceName.begin(), resourceName.end());
             return *this;
         }
 
