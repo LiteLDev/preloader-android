@@ -28,6 +28,7 @@ namespace pl::modmenu {
         Color,
         Keybind,
         Text,
+        Button,
     };
 
 /**
