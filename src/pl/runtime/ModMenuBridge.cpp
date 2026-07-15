@@ -16,6 +16,7 @@
 
 #include "pl/Logger.hpp"
 #include "pl/ModMenu.hpp"
+#include "pl/Input.hpp"
 
 namespace pl::runtime {
     namespace {
@@ -42,6 +43,53 @@ namespace pl::runtime {
         std::vector<RegisteredButton> g_registeredButtons;
         std::mutex g_modMenuMutex;
         thread_local std::vector<std::string> g_currentOwnerModIds;
+        
+        static bool g_keyCallbackRegistered = false;
+
+        void RegisterKeyCallbackIfNeeded() {
+            if (g_keyCallbackRegistered) return;
+            g_keyCallbackRegistered = true;
+
+            pl::input::registerKeyCallback([](const pl::input::KeyEvent& event) {
+                bool consumed = false;
+                std::vector<std::function<void()>> callbacksToInvoke;
+
+                {
+                    std::lock_guard<std::mutex> lock(g_modMenuMutex);
+                    for (auto& mod : g_registeredModules) {
+                        if (!mod.enabled) continue;
+                        if (!mod.on_keybind) continue;
+
+                        for (auto& cfg : mod.configs) {
+                            if (cfg.type == pl::modmenu::ConfigType::Keybind) {
+                                try {
+                                    if (!cfg.current_value.empty()) {
+                                        int key = std::stoi(cfg.current_value);
+                                        if (key != 0 && key == event.keyCode) {
+                                            auto cb = mod.on_keybind;
+                                            std::string mid = mod.module_id;
+                                            std::string ckey = cfg.key;
+                                            bool isDown = event.isKeyDown;
+                                            callbacksToInvoke.push_back([cb, mid, ckey, isDown]() {
+                                                cb(mid, ckey, isDown);
+                                            });
+                                            consumed = true;
+                                        }
+                                    }
+                                } catch (...) {
+                                }
+                            }
+                        }
+                    }
+                }
+
+                for (auto& cb : callbacksToInvoke) {
+                    cb();
+                }
+
+                return consumed;
+            });
+        }
 
         struct RegisteredFont {
             std::string font_id;
@@ -355,6 +403,7 @@ namespace pl::runtime {
             entry.hide_in_hud_editor = info.hideInHudEditor;
             entry.on_toggle = info.onToggle;
             entry.on_config_changed = info.onConfigChanged;
+            entry.on_keybind = info.onKeybind;
             entry.configs.reserve(info.configs.size());
 
             for (size_t i = 0; i < info.configs.size(); ++i) {
@@ -401,6 +450,7 @@ namespace pl::runtime {
                 }
             }
 
+            RegisterKeyCallbackIfNeeded();
             g_registeredModules.push_back(std::move(entry));
             for (auto &button : g_registeredButtons) {
                 if (button.module_id == registeredModuleId) {

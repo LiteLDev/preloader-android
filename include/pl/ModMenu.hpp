@@ -111,6 +111,9 @@ namespace pl::modmenu {
         std::function<void(std::string_view moduleId, std::string_view key,
                 std::string_view value)>
         onConfigChanged;
+        std::function<void(std::string_view moduleId, std::string_view key,
+                bool isDown)>
+        onKeybind;
     };
 
 /**
@@ -244,6 +247,14 @@ namespace pl::modmenu {
                 std::string_view value)>
         callback) {
             mInfo.onConfigChanged = std::move(callback);
+            return *this;
+        }
+
+        ModuleBuilder &onKeybind(
+        std::function<void(std::string_view moduleId, std::string_view key,
+                bool isDown)>
+        callback) {
+            mInfo.onKeybind = std::move(callback);
             return *this;
         }
 

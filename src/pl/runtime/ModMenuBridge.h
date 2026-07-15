@@ -32,6 +32,9 @@ namespace pl::runtime {
         std::function<void(std::string_view moduleId, std::string_view key,
                 std::string_view value)>
         on_config_changed;
+        std::function<void(std::string_view moduleId, std::string_view key,
+                bool isDown)>
+        on_keybind;
 
         struct ConfigEntry {
             std::string key;
