@@ -9,6 +9,7 @@
 #include <cstring>
 #include <dlfcn.h>
 #include <mutex>
+#include <queue>
 #include <span>
 #include <shared_mutex>
 #include <string>
@@ -22,8 +23,6 @@ namespace pl::memory {
 namespace {
 
 constexpr size_t kMaxExactAnchorSize = 8;
-
-using ByteFrequencyTable = std::array<size_t, 256>;
 
 struct PatternByte {
   uint8_t value = 0;
@@ -52,22 +51,23 @@ struct CompiledPattern {
   ParsedPattern pattern;
 };
 
+struct AnchorNode {
+  std::array<int, 256> next{};
+  int failure = 0;
+  std::vector<size_t> outputs;
+
+  AnchorNode() { next.fill(-1); }
+};
+
 std::unordered_map<std::string, ModuleInfo> moduleCache;
 std::unordered_map<std::string, uintptr_t> sigCache;
 std::unordered_map<std::string, ParsedPattern> patternCache;
-std::unordered_map<std::string, ByteFrequencyTable> frequencyCache;
 std::shared_mutex cacheMutex;
 
 int hexValue(char ch) {
-  if (ch >= '0' && ch <= '9') {
-    return ch - '0';
-  }
-  if (ch >= 'a' && ch <= 'f') {
-    return ch - 'a' + 10;
-  }
-  if (ch >= 'A' && ch <= 'F') {
-    return ch - 'A' + 10;
-  }
+  if (ch >= '0' && ch <= '9') return ch - '0';
+  if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+  if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
   return -1;
 }
 
@@ -76,25 +76,16 @@ bool parsePatternToken(std::string_view token, PatternByte &byte) {
     byte = PatternByte{0, 0};
     return true;
   }
-
-  if (token.size() != 2) {
-    return false;
-  }
+  if (token.size() != 2) return false;
 
   uint8_t value = 0;
   uint8_t mask = 0;
   for (size_t i = 0; i < token.size(); ++i) {
     const char ch = token[i];
     const auto shift = static_cast<uint8_t>((1 - i) * 4);
-    if (ch == '?') {
-      continue;
-    }
-
+    if (ch == '?') continue;
     const int digit = hexValue(ch);
-    if (digit < 0) {
-      return false;
-    }
-
+    if (digit < 0) return false;
     value |= static_cast<uint8_t>(digit << shift);
     mask |= static_cast<uint8_t>(0xF << shift);
   }
@@ -104,13 +95,8 @@ bool parsePatternToken(std::string_view token, PatternByte &byte) {
 }
 
 void appendPatternByte(ParsedPattern &pattern, PatternByte byte) {
-  const size_t byteIndex = pattern.bytes.size();
-  if (byte.mask != 0) {
-    if (pattern.checkIndices.empty()) {
-      pattern.anchorIndex = byteIndex;
-    }
-    pattern.checkIndices.push_back(byteIndex);
-  }
+  const size_t index = pattern.bytes.size();
+  if (byte.mask != 0) pattern.checkIndices.push_back(index);
   pattern.bytes.push_back(byte);
 }
 
@@ -120,53 +106,36 @@ bool appendPatternToken(std::string_view token, ParsedPattern &pattern) {
     appendPatternByte(pattern, byte);
     return true;
   }
+  if (token.empty() || token.size() % 2 != 0) return false;
 
-  if (token.empty() || token.size() % 2 != 0) {
-    return false;
-  }
-
-  std::vector<PatternByte> bytes;
-  bytes.reserve(token.size() / 2);
   for (size_t pos = 0; pos < token.size(); pos += 2) {
-    if (!parsePatternToken(token.substr(pos, 2), byte)) {
-      return false;
-    }
-    bytes.push_back(byte);
-  }
-
-  for (const PatternByte parsedByte : bytes) {
-    appendPatternByte(pattern, parsedByte);
+    if (!parsePatternToken(token.substr(pos, 2), byte)) return false;
+    appendPatternByte(pattern, byte);
   }
   return true;
 }
 
 ParsedPattern parsePattern(std::string_view signature) {
   ParsedPattern pattern;
-
   size_t pos = 0;
   while (pos < signature.size()) {
     while (pos < signature.size() &&
            std::isspace(static_cast<unsigned char>(signature[pos]))) {
       ++pos;
     }
-    if (pos >= signature.size()) {
-      break;
-    }
+    if (pos >= signature.size()) break;
 
-    const size_t tokenStart = pos;
+    const size_t start = pos;
     while (pos < signature.size() &&
            !std::isspace(static_cast<unsigned char>(signature[pos]))) {
       ++pos;
     }
-
-    if (!appendPatternToken(signature.substr(tokenStart, pos - tokenStart),
-                            pattern)) {
+    if (!appendPatternToken(signature.substr(start, pos - start), pattern)) {
       pattern.bytes.clear();
       pattern.checkIndices.clear();
-      return pattern;
+      break;
     }
   }
-
   return pattern;
 }
 
@@ -176,7 +145,7 @@ bool matches(PatternByte pattern, uint8_t value) {
 
 bool isExactByte(PatternByte byte) { return byte.mask == 0xFF; }
 
-int countMaskBits(uint8_t mask) {
+int maskBits(uint8_t mask) {
   int count = 0;
   while (mask != 0) {
     mask &= static_cast<uint8_t>(mask - 1);
@@ -185,83 +154,11 @@ int countMaskBits(uint8_t mask) {
   return count;
 }
 
-size_t matchingByteFrequency(PatternByte byte,
-                             const ByteFrequencyTable &frequencies) {
-  size_t frequency = 0;
-  for (size_t value = 0; value < frequencies.size(); ++value) {
-    if (matches(byte, static_cast<uint8_t>(value))) {
-      frequency += frequencies[value];
-    }
-  }
-  return frequency;
-}
+void selectAnchor(ParsedPattern &pattern) {
+  if (pattern.checkIndices.empty()) return;
 
-bool isBetterAnchor(PatternByte candidate, size_t candidateIndex,
-                    PatternByte current, size_t currentIndex,
-                    const ByteFrequencyTable &frequencies) {
-  const size_t candidateFrequency =
-      matchingByteFrequency(candidate, frequencies);
-  const size_t currentFrequency = matchingByteFrequency(current, frequencies);
-
-  if (candidateFrequency != currentFrequency) {
-    return candidateFrequency < currentFrequency;
-  }
-
-  const int candidateMaskBits = countMaskBits(candidate.mask);
-  const int currentMaskBits = countMaskBits(current.mask);
-  if (candidateMaskBits != currentMaskBits) {
-    return candidateMaskBits > currentMaskBits;
-  }
-
-  return candidateIndex > currentIndex;
-}
-
-size_t exactAnchorCost(const ParsedPattern &pattern, size_t start, size_t size,
-                       const ByteFrequencyTable &frequencies) {
-  size_t cost = 0;
-  for (size_t i = 0; i < size; ++i) {
-    cost += frequencies[pattern.bytes[start + i].value];
-  }
-  return cost;
-}
-
-bool isBetterExactAnchor(const ParsedPattern &pattern, size_t candidateIndex,
-                         size_t candidateSize, size_t currentIndex,
-                         size_t currentSize,
-                         const ByteFrequencyTable &frequencies) {
-  const size_t candidateHeadFrequency =
-      frequencies[pattern.bytes[candidateIndex].value];
-  const size_t currentHeadFrequency =
-      frequencies[pattern.bytes[currentIndex].value];
-  if (candidateHeadFrequency != currentHeadFrequency) {
-    return candidateHeadFrequency < currentHeadFrequency;
-  }
-
-  if (candidateSize != currentSize) {
-    return candidateSize > currentSize;
-  }
-
-  const size_t candidateCost =
-      exactAnchorCost(pattern, candidateIndex, candidateSize, frequencies);
-  const size_t currentCost =
-      exactAnchorCost(pattern, currentIndex, currentSize, frequencies);
-  if (candidateCost != currentCost) {
-    return candidateCost < currentCost;
-  }
-
-  return candidateIndex > currentIndex;
-}
-
-void selectAnchor(ParsedPattern &pattern,
-                  const ByteFrequencyTable &frequencies) {
-  if (pattern.checkIndices.empty()) {
-    return;
-  }
-
-  bool hasExactAnchor = false;
-  size_t bestExactIndex = 0;
-  size_t bestExactSize = 0;
-
+  size_t bestStart = 0;
+  size_t bestSize = 0;
   for (size_t runStart = 0; runStart < pattern.bytes.size();) {
     if (!isExactByte(pattern.bytes[runStart])) {
       ++runStart;
@@ -274,46 +171,37 @@ void selectAnchor(ParsedPattern &pattern,
       ++runEnd;
     }
 
-    const size_t runSize = runEnd - runStart;
-    const size_t maxAnchorSize = std::min(runSize, kMaxExactAnchorSize);
-    for (size_t size = 1; size <= maxAnchorSize; ++size) {
-      for (size_t start = runStart; start + size <= runEnd; ++start) {
-        if (!hasExactAnchor ||
-            isBetterExactAnchor(pattern, start, size, bestExactIndex,
-                                bestExactSize, frequencies)) {
-          hasExactAnchor = true;
-          bestExactIndex = start;
-          bestExactSize = size;
-        }
-      }
+    const size_t size = std::min(runEnd - runStart, kMaxExactAnchorSize);
+    const size_t start = runEnd - size;
+    if (size > bestSize || (size == bestSize && start > bestStart)) {
+      bestStart = start;
+      bestSize = size;
     }
-
     runStart = runEnd;
   }
 
-  if (hasExactAnchor) {
-    pattern.anchorIndex = bestExactIndex;
-    pattern.anchorSize = bestExactSize;
+  if (bestSize != 0) {
+    pattern.anchorIndex = bestStart;
+    pattern.anchorSize = bestSize;
     return;
   }
 
   size_t bestIndex = pattern.checkIndices.front();
+  int bestBits = maskBits(pattern.bytes[bestIndex].mask);
   for (const size_t index : pattern.checkIndices) {
-    if (isBetterAnchor(pattern.bytes[index], index, pattern.bytes[bestIndex],
-                       bestIndex, frequencies)) {
+    const int bits = maskBits(pattern.bytes[index].mask);
+    if (bits > bestBits || (bits == bestBits && index > bestIndex)) {
       bestIndex = index;
+      bestBits = bits;
     }
   }
-
   pattern.anchorIndex = bestIndex;
   pattern.anchorSize = 1;
 }
 
 bool parseMapsLine(const char *line, const std::string &moduleName,
                    MemoryRegion &region) {
-  if (std::strstr(line, moduleName.c_str()) == nullptr) {
-    return false;
-  }
+  if (std::strstr(line, moduleName.c_str()) == nullptr) return false;
 
   uintptr_t start = 0;
   uintptr_t end = 0;
@@ -322,31 +210,22 @@ bool parseMapsLine(const char *line, const std::string &moduleName,
                   perms) != 3) {
     return false;
   }
-  if (end <= start || perms[0] != 'r') {
-    return false;
-  }
-
+  if (end <= start || perms[0] != 'r') return false;
   region = MemoryRegion{start, end};
   return true;
 }
 
 void addReadableRegion(ModuleInfo &module, uintptr_t start, uintptr_t end) {
-  if (!module.regions.empty()) {
-    MemoryRegion &last = module.regions.back();
-    if (last.end == start) {
-      last.end = end;
-      return;
-    }
+  if (!module.regions.empty() && module.regions.back().end == start) {
+    module.regions.back().end = end;
+    return;
   }
-
   module.regions.push_back(MemoryRegion{start, end});
 }
 
 bool getModuleInfo(const std::string &name, ModuleInfo &out) {
   FILE *maps = std::fopen("/proc/self/maps", "r");
-  if (!maps) {
-    return false;
-  }
+  if (!maps) return false;
 
   char line[4096];
   while (std::fgets(line, sizeof(line), maps)) {
@@ -356,98 +235,39 @@ bool getModuleInfo(const std::string &name, ModuleInfo &out) {
     }
   }
   std::fclose(maps);
-
-  if (out.regions.empty()) {
-    return false;
-  }
+  if (out.regions.empty()) return false;
 
   out.handle = dlopen(name.c_str(), RTLD_LAZY | RTLD_NOLOAD);
-  if (!out.handle) {
-    out.handle = dlopen(name.c_str(), RTLD_LAZY);
-  }
-
+  if (!out.handle) out.handle = dlopen(name.c_str(), RTLD_LAZY);
   return true;
 }
 
 ModuleInfo getCachedModuleInfo(const std::string &moduleName) {
   {
-    std::shared_lock lk(cacheMutex);
-    if (auto it = moduleCache.find(moduleName); it != moduleCache.end()) {
-      return it->second;
-    }
+    std::shared_lock lock(cacheMutex);
+    const auto it = moduleCache.find(moduleName);
+    if (it != moduleCache.end()) return it->second;
   }
 
-  ModuleInfo mod;
-  if (!getModuleInfo(moduleName, mod)) {
-    return {};
-  }
+  ModuleInfo module;
+  if (!getModuleInfo(moduleName, module)) return {};
 
-  {
-    std::unique_lock lk(cacheMutex);
-    if (auto it = moduleCache.find(moduleName); it != moduleCache.end()) {
-      return it->second;
-    }
-    moduleCache[moduleName] = mod;
-  }
-
-  return mod;
+  std::unique_lock lock(cacheMutex);
+  const auto [it, inserted] = moduleCache.emplace(moduleName, module);
+  return inserted ? module : it->second;
 }
 
 ParsedPattern getCachedPattern(const std::string &signature) {
   {
-    std::shared_lock lk(cacheMutex);
-    if (auto it = patternCache.find(signature); it != patternCache.end()) {
-      return it->second;
-    }
+    std::shared_lock lock(cacheMutex);
+    const auto it = patternCache.find(signature);
+    if (it != patternCache.end()) return it->second;
   }
 
   ParsedPattern pattern = parsePattern(signature);
-  {
-    std::unique_lock lk(cacheMutex);
-    if (auto it = patternCache.find(signature); it != patternCache.end()) {
-      return it->second;
-    }
-    patternCache[signature] = pattern;
-  }
-
-  return pattern;
-}
-
-ByteFrequencyTable buildByteFrequencyTable(
-    const std::vector<MemoryRegion> &regions) {
-  ByteFrequencyTable frequencies{};
-
-  for (const auto &region : regions) {
-    const auto *data = reinterpret_cast<const uint8_t *>(region.start);
-    const size_t regionSize = region.end - region.start;
-    for (size_t offset = 0; offset < regionSize; ++offset) {
-      ++frequencies[data[offset]];
-    }
-  }
-
-  return frequencies;
-}
-
-ByteFrequencyTable
-getCachedByteFrequencyTable(const std::string &moduleName,
-                            const std::vector<MemoryRegion> &regions) {
-  {
-    std::shared_lock lk(cacheMutex);
-    if (auto it = frequencyCache.find(moduleName); it != frequencyCache.end()) {
-      return it->second;
-    }
-  }
-
-  const ByteFrequencyTable frequencies = buildByteFrequencyTable(regions);
-  {
-    std::unique_lock lk(cacheMutex);
-    if (auto it = frequencyCache.find(moduleName); it != frequencyCache.end()) {
-      return it->second;
-    }
-    frequencyCache[moduleName] = frequencies;
-  }
-
-  return frequencies;
+  std::unique_lock lock(cacheMutex);
+  const auto [it, inserted] = patternCache.emplace(signature, pattern);
+  return inserted ? pattern : it->second;
 }
 
 bool matchesPatternAt(const uint8_t *data, const ParsedPattern &pattern) {
@@ -456,38 +276,28 @@ bool matchesPatternAt(const uint8_t *data, const ParsedPattern &pattern) {
         index < pattern.anchorIndex + pattern.anchorSize) {
       continue;
     }
-
-    if (!matches(pattern.bytes[index], data[index])) {
-      return false;
-    }
+    if (!matches(pattern.bytes[index], data[index])) return false;
   }
-
   return true;
 }
 
 bool matchesAnchorAt(const uint8_t *data, size_t regionSize,
                      size_t anchorOffset, const ParsedPattern &pattern) {
-  if (anchorOffset + pattern.anchorSize > regionSize) {
-    return false;
-  }
-
+  if (anchorOffset + pattern.anchorSize > regionSize) return false;
   for (size_t i = 0; i < pattern.anchorSize; ++i) {
     if (!matches(pattern.bytes[pattern.anchorIndex + i],
                  data[anchorOffset + i])) {
       return false;
     }
   }
-
   return true;
 }
 
 std::vector<CompiledPattern>
 compilePatterns(const std::vector<std::string> &signatures,
-                const ByteFrequencyTable &frequencies,
                 std::unordered_map<std::string, uintptr_t> &results) {
   std::vector<CompiledPattern> compiled;
   compiled.reserve(signatures.size());
-
   for (const auto &signature : signatures) {
     auto pattern = getCachedPattern(signature);
     if (pattern.bytes.empty()) {
@@ -495,20 +305,84 @@ compilePatterns(const std::vector<std::string> &signatures,
       results[signature] = 0;
       continue;
     }
-
-    selectAnchor(pattern, frequencies);
+    selectAnchor(pattern);
     compiled.push_back(CompiledPattern{signature, std::move(pattern)});
   }
-
   return compiled;
+}
+
+std::vector<AnchorNode>
+buildAnchorAutomaton(const std::vector<CompiledPattern> &patterns,
+                     const std::vector<bool> &active,
+                     std::vector<size_t> &maskedPatterns) {
+  std::vector<AnchorNode> nodes(1);
+
+  for (size_t index = 0; index < patterns.size(); ++index) {
+    if (!active[index]) continue;
+    const auto &pattern = patterns[index].pattern;
+    bool exact = true;
+    for (size_t i = 0; i < pattern.anchorSize; ++i) {
+      if (!isExactByte(pattern.bytes[pattern.anchorIndex + i])) {
+        exact = false;
+        break;
+      }
+    }
+    if (!exact) {
+      maskedPatterns.push_back(index);
+      continue;
+    }
+
+    int state = 0;
+    for (size_t i = 0; i < pattern.anchorSize; ++i) {
+      const uint8_t value = pattern.bytes[pattern.anchorIndex + i].value;
+      int next = nodes[state].next[value];
+      if (next == -1) {
+        next = static_cast<int>(nodes.size());
+        nodes[state].next[value] = next;
+        nodes.emplace_back();
+      }
+      state = next;
+    }
+    nodes[state].outputs.push_back(index);
+  }
+
+  std::queue<int> queue;
+  for (size_t value = 0; value < 256; ++value) {
+    int &next = nodes[0].next[value];
+    if (next == -1) {
+      next = 0;
+    } else {
+      nodes[next].failure = 0;
+      queue.push(next);
+    }
+  }
+
+  while (!queue.empty()) {
+    const int state = queue.front();
+    queue.pop();
+    for (size_t value = 0; value < 256; ++value) {
+      int &next = nodes[state].next[value];
+      if (next == -1) {
+        next = nodes[nodes[state].failure].next[value];
+        continue;
+      }
+
+      const int failure = nodes[nodes[state].failure].next[value];
+      nodes[next].failure = failure;
+      const auto &outputs = nodes[failure].outputs;
+      nodes[next].outputs.insert(nodes[next].outputs.end(), outputs.begin(),
+                                 outputs.end());
+      queue.push(next);
+    }
+  }
+
+  return nodes;
 }
 
 void scanCompiledPatterns(const std::vector<MemoryRegion> &regions,
                           const std::vector<CompiledPattern> &patterns,
                           std::unordered_map<std::string, uintptr_t> &results) {
-  if (patterns.empty()) {
-    return;
-  }
+  if (patterns.empty()) return;
 
   std::vector<uintptr_t> found(patterns.size(), 0);
   std::vector<bool> active(patterns.size(), true);
@@ -526,45 +400,23 @@ void scanCompiledPatterns(const std::vector<MemoryRegion> &regions,
     }
   }
 
-  std::array<std::vector<size_t>, 256> exactAnchorBuckets;
-  std::vector<size_t> maskedAnchorPatterns;
-  for (size_t i = 0; i < patterns.size(); ++i) {
-    if (!active[i]) {
-      continue;
-    }
-
-    const auto &pattern = patterns[i].pattern;
-    const PatternByte anchor = pattern.bytes[pattern.anchorIndex];
-    if (isExactByte(anchor)) {
-      exactAnchorBuckets[anchor.value].push_back(i);
-    } else {
-      maskedAnchorPatterns.push_back(i);
-    }
-  }
+  std::vector<size_t> maskedPatterns;
+  const auto nodes = buildAnchorAutomaton(patterns, active, maskedPatterns);
 
   auto tryMatch = [&](const MemoryRegion &region, const uint8_t *data,
                       size_t regionSize, size_t anchorOffset,
                       size_t patternIndex) {
-    if (!active[patternIndex]) {
-      return;
-    }
-
+    if (!active[patternIndex]) return;
     const auto &pattern = patterns[patternIndex].pattern;
     if (regionSize < pattern.bytes.size() ||
-        anchorOffset < pattern.anchorIndex) {
-      return;
-    }
-
-    if (!matchesAnchorAt(data, regionSize, anchorOffset, pattern)) {
+        anchorOffset < pattern.anchorIndex ||
+        !matchesAnchorAt(data, regionSize, anchorOffset, pattern)) {
       return;
     }
 
     const size_t candidateOffset = anchorOffset - pattern.anchorIndex;
-    if (candidateOffset > regionSize - pattern.bytes.size()) {
-      return;
-    }
-
-    if (!matchesPatternAt(data + candidateOffset, pattern)) {
+    if (candidateOffset > regionSize - pattern.bytes.size() ||
+        !matchesPatternAt(data + candidateOffset, pattern)) {
       return;
     }
 
@@ -574,24 +426,25 @@ void scanCompiledPatterns(const std::vector<MemoryRegion> &regions,
   };
 
   for (const auto &region : regions) {
-    if (unresolved == 0) {
-      break;
-    }
-
+    if (unresolved == 0) break;
     const auto *data = reinterpret_cast<const uint8_t *>(region.start);
     const size_t regionSize = region.end - region.start;
+    int state = 0;
 
     for (size_t offset = 0; offset < regionSize && unresolved != 0; ++offset) {
-      const uint8_t value = data[offset];
-
-      for (const size_t patternIndex : exactAnchorBuckets[value]) {
-        tryMatch(region, data, regionSize, offset, patternIndex);
+      state = nodes[state].next[data[offset]];
+      for (const size_t patternIndex : nodes[state].outputs) {
+        const auto anchorSize = patterns[patternIndex].pattern.anchorSize;
+        if (offset + 1 >= anchorSize) {
+          tryMatch(region, data, regionSize, offset + 1 - anchorSize,
+                   patternIndex);
+        }
       }
 
-      for (const size_t patternIndex : maskedAnchorPatterns) {
+      for (const size_t patternIndex : maskedPatterns) {
+        if (!active[patternIndex]) continue;
         const auto &pattern = patterns[patternIndex].pattern;
-        const PatternByte anchor = pattern.bytes[pattern.anchorIndex];
-        if (matches(anchor, value)) {
+        if (matches(pattern.bytes[pattern.anchorIndex], data[offset])) {
           tryMatch(region, data, regionSize, offset, patternIndex);
         }
       }
@@ -611,80 +464,61 @@ std::string makeSignatureCacheKey(std::string_view moduleName,
   return key;
 }
 
-} // namespace
+}
 
 std::unordered_map<std::string, uintptr_t>
 resolveSignatures(std::span<const std::string> signatures,
                   std::string_view moduleName) {
   std::unordered_map<std::string, uintptr_t> results;
-  std::vector<std::string> pendingSignatures;
+  std::vector<std::string> pending;
   std::unordered_map<std::string, size_t> pendingLookup;
 
   if (moduleName.empty()) {
-    for (const auto &signature : signatures) {
-      results[signature] = 0;
-    }
+    for (const auto &signature : signatures) results[signature] = 0;
     return results;
   }
 
   {
-    std::shared_lock lk(cacheMutex);
+    std::shared_lock lock(cacheMutex);
     for (const auto &signature : signatures) {
       const auto key = makeSignatureCacheKey(moduleName, signature);
-      if (const auto it = sigCache.find(key); it != sigCache.end()) {
-        results[signature] = it->second;
-        continue;
+      const auto cached = sigCache.find(key);
+      if (cached != sigCache.end()) {
+        results[signature] = cached->second;
+      } else if (pendingLookup.emplace(signature, pending.size()).second) {
+        pending.push_back(signature);
       }
-
-      if (pendingLookup.find(signature) != pendingLookup.end()) {
-        continue;
-      }
-
-      pendingLookup[signature] = pendingSignatures.size();
-      pendingSignatures.push_back(signature);
     }
   }
 
-  if (pendingSignatures.empty()) {
-    return results;
-  }
+  if (pending.empty()) return results;
 
-  const ModuleInfo mod = getCachedModuleInfo(std::string(moduleName));
-  if (mod.regions.empty()) {
-    for (const auto &signature : pendingSignatures) {
-      results[signature] = 0;
-    }
+  const ModuleInfo module = getCachedModuleInfo(std::string(moduleName));
+  if (module.regions.empty()) {
+    for (const auto &signature : pending) results[signature] = 0;
   } else {
-    std::vector<std::string> patternSignatures;
-    patternSignatures.reserve(pendingSignatures.size());
-
-    for (const auto &signature : pendingSignatures) {
-      if (mod.handle) {
-        if (void *sym = dlsym(mod.handle, signature.c_str())) {
-          results[signature] = reinterpret_cast<uintptr_t>(sym);
+    std::vector<std::string> patterns;
+    patterns.reserve(pending.size());
+    for (const auto &signature : pending) {
+      if (module.handle) {
+        if (void *symbol = dlsym(module.handle, signature.c_str())) {
+          results[signature] = reinterpret_cast<uintptr_t>(symbol);
           continue;
         }
       }
-      patternSignatures.push_back(signature);
+      patterns.push_back(signature);
     }
 
-    if (!patternSignatures.empty()) {
-      const auto frequencies =
-          getCachedByteFrequencyTable(std::string(moduleName), mod.regions);
-      const auto compiled =
-          compilePatterns(patternSignatures, frequencies, results);
-      scanCompiledPatterns(mod.regions, compiled, results);
+    if (!patterns.empty()) {
+      const auto compiled = compilePatterns(patterns, results);
+      scanCompiledPatterns(module.regions, compiled, results);
     }
   }
 
-  {
-    std::unique_lock lk(cacheMutex);
-    for (const auto &signature : pendingSignatures) {
-      sigCache[makeSignatureCacheKey(moduleName, signature)] =
-          results[signature];
-    }
+  std::unique_lock lock(cacheMutex);
+  for (const auto &signature : pending) {
+    sigCache[makeSignatureCacheKey(moduleName, signature)] = results[signature];
   }
-
   return results;
 }
 
@@ -692,10 +526,8 @@ uintptr_t resolveSignature(std::string_view signature,
                            std::string_view moduleName) {
   std::vector<std::string> signatures{std::string(signature)};
   const auto results = resolveSignatures(signatures, moduleName);
-  if (const auto it = results.find(std::string(signature)); it != results.end()) {
-    return it->second;
-  }
-  return 0;
+  const auto it = results.find(std::string(signature));
+  return it == results.end() ? 0 : it->second;
 }
 
-} // namespace pl::memory
+}

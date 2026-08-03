@@ -2,6 +2,7 @@
 
 #include "pl/ModMenu.hpp"
 
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -88,6 +89,7 @@ namespace pl::runtime {
 
     int GetRegisteredModuleCount();
     bool GetRegisteredModuleInfo(int index, RegisteredModule &out);
+    void GetRegisteredModulesInfo(std::vector<RegisteredModule> &out);
     void ToggleRegisteredModule(const char *module_id, bool enabled);
     void SetRegisteredModuleConfig(const char *module_id, const char *key,
                                    const char *value);
@@ -101,6 +103,7 @@ namespace pl::runtime {
                                        pl::modmenu::ButtonEvent event, float value);
 
     void GetDrawCommands(std::vector<InternalDrawCommand> &out);
+    uint64_t GetDrawCommandsRevision();
 
     bool RegisterFontInternal(const char *font_id, const unsigned char *ttf_data,
                               int ttf_size);

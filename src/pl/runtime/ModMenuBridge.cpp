@@ -1,6 +1,7 @@
 #include "pl/runtime/ModMenuBridge.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cmath>
 #include <cstring>
@@ -42,6 +43,7 @@ namespace pl::runtime {
         std::vector<RegisteredModule> g_registeredModules;
         std::vector<RegisteredButton> g_registeredButtons;
         std::mutex g_modMenuMutex;
+        std::atomic<uint64_t> g_drawCommandsRevision{1};
         thread_local std::vector<std::string> g_currentOwnerModIds;
         
         static bool g_keyCallbackRegistered = false;
@@ -466,18 +468,39 @@ namespace pl::runtime {
             if (!module_id)
                 return;
             std::lock_guard<std::mutex> lock(g_modMenuMutex);
+            bool drawChanged = false;
             g_registeredModules.erase(
                     std::remove_if(g_registeredModules.begin(), g_registeredModules.end(),
-                                   [module_id](const RegisteredModule &m) {
-                                       return m.module_id == module_id;
+                                   [module_id, &drawChanged](const RegisteredModule &m) {
+                                       if (m.module_id != module_id) return false;
+                                       drawChanged |= m.enabled && !m.draw_commands.empty();
+                                       return true;
                                    }),
                     g_registeredModules.end());
+            if (drawChanged) g_drawCommandsRevision.fetch_add(1, std::memory_order_release);
             g_registeredButtons.erase(
                     std::remove_if(g_registeredButtons.begin(), g_registeredButtons.end(),
                                    [module_id](const RegisteredButton &button) {
                                        return button.module_id == module_id;
                                    }),
                     g_registeredButtons.end());
+        }
+
+        bool DrawCommandsEqual(const RegisteredModule &mod,
+                               std::span<const pl::modmenu::DrawCommand> commands) {
+            if (mod.draw_commands.size() != commands.size()) return false;
+            for (size_t i = 0; i < commands.size(); ++i) {
+                const auto &left = mod.draw_commands[i];
+                const auto &right = commands[i];
+                if (left.type != right.type || left.x != right.x || left.y != right.y ||
+                    left.w != right.w || left.h != right.h || left.x3 != right.x3 ||
+                    left.y3 != right.y3 || left.color != right.color ||
+                    left.size != right.size || left.text != right.text ||
+                    left.font_id != right.fontId || left.image_id != right.imageId) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         void SubmitCppDrawCommands(std::string_view moduleIdView,
@@ -492,6 +515,7 @@ namespace pl::runtime {
             std::lock_guard<std::mutex> lock(g_modMenuMutex);
             for (auto &mod : g_registeredModules) {
                 if (mod.module_id == moduleId) {
+                    if (DrawCommandsEqual(mod, commands)) return;
                     mod.draw_commands.clear();
                     if (!commands.empty()) {
                         mod.draw_commands.reserve(commands.size());
@@ -512,6 +536,9 @@ namespace pl::runtime {
                             icmd.image_id = command.imageId;
                             mod.draw_commands.push_back(std::move(icmd));
                         }
+                    }
+                    if (mod.enabled) {
+                        g_drawCommandsRevision.fetch_add(1, std::memory_order_release);
                     }
                     return;
                 }
@@ -672,6 +699,23 @@ namespace pl::runtime {
         return true;
     }
 
+    void GetRegisteredModulesInfo(std::vector<RegisteredModule> &out) {
+        std::lock_guard<std::mutex> lock(g_modMenuMutex);
+        out.clear();
+        out.reserve(g_registeredModules.size());
+        for (const auto &source : g_registeredModules) {
+            RegisteredModule item;
+            item.module_id = source.module_id;
+            item.display_name = source.display_name;
+            item.description = source.description;
+            item.mod_id = source.mod_id;
+            item.enabled = source.enabled;
+            item.hide_in_hud_editor = source.hide_in_hud_editor;
+            item.configs = source.configs;
+            out.push_back(std::move(item));
+        }
+    }
+
     void ToggleRegisteredModule(const char *module_id, bool enabled) {
         if (!module_id)
             return;
@@ -680,6 +724,9 @@ namespace pl::runtime {
             std::lock_guard<std::mutex> lock(g_modMenuMutex);
             for (auto &mod : g_registeredModules) {
                 if (mod.module_id == module_id) {
+                    if (mod.enabled != enabled && !mod.draw_commands.empty()) {
+                        g_drawCommandsRevision.fetch_add(1, std::memory_order_release);
+                    }
                     mod.enabled = enabled;
                     callback = mod.on_toggle;
                     break;
@@ -725,12 +772,16 @@ namespace pl::runtime {
             return;
 
         std::lock_guard<std::mutex> lock(g_modMenuMutex);
+        bool drawChanged = false;
         g_registeredModules.erase(
                 std::remove_if(g_registeredModules.begin(), g_registeredModules.end(),
-                               [&modId](const RegisteredModule &m) {
-                                   return m.mod_id == modId;
+                               [&modId, &drawChanged](const RegisteredModule &m) {
+                                   if (m.mod_id != modId) return false;
+                                   drawChanged |= m.enabled && !m.draw_commands.empty();
+                                   return true;
                                }),
                 g_registeredModules.end());
+        if (drawChanged) g_drawCommandsRevision.fetch_add(1, std::memory_order_release);
         g_registeredButtons.erase(
                 std::remove_if(g_registeredButtons.begin(), g_registeredButtons.end(),
                                [&modId](const RegisteredButton &button) {
@@ -823,6 +874,10 @@ namespace pl::runtime {
                 out.insert(out.end(), mod.draw_commands.begin(), mod.draw_commands.end());
             }
         }
+    }
+
+    uint64_t GetDrawCommandsRevision() {
+        return g_drawCommandsRevision.load(std::memory_order_acquire);
     }
 
     bool RegisterFontInternal(const char *font_id, const unsigned char *ttf_data,

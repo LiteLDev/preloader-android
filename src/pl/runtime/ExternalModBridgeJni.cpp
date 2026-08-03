@@ -9,6 +9,31 @@
 #include "pl/Logger.hpp"
 #include "pl/runtime/ModMenuBridge.h"
 
+static nlohmann::json modulePayload(const pl::runtime::RegisteredModule &mod) {
+    nlohmann::json payload = {
+            {"module_id", mod.module_id},
+            {"display_name", mod.display_name},
+            {"description", mod.description},
+            {"mod_id", mod.mod_id},
+            {"enabled", mod.enabled},
+            {"hide_in_hud_editor", mod.hide_in_hud_editor},
+            {"configs", nlohmann::json::array()},
+    };
+    for (const auto &cfg : mod.configs) {
+        payload["configs"].push_back({
+                {"key", cfg.key},
+                {"display_name", cfg.display_name},
+                {"type", static_cast<int>(cfg.type)},
+                {"default_value", cfg.default_value},
+                {"min_value", cfg.min_value},
+                {"max_value", cfg.max_value},
+                {"current_value", cfg.current_value},
+                {"depends_on", cfg.depends_on},
+        });
+    }
+    return payload;
+}
+
 extern "C" {
 
 JNIEXPORT jint JNICALL
@@ -28,27 +53,18 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetExternalMo
         return env->NewStringUTF("{}");
     }
 
-    nlohmann::json payload = {
-            {"module_id", mod.module_id},
-            {"display_name", mod.display_name},
-            {"description", mod.description},
-            {"mod_id", mod.mod_id},
-            {"enabled", mod.enabled},
-            {"hide_in_hud_editor", mod.hide_in_hud_editor},
-            {"configs", nlohmann::json::array()},
-    };
-    for (const auto &cfg : mod.configs) {
-        payload["configs"].push_back({
-                                             {"key", cfg.key},
-                                             {"display_name", cfg.display_name},
-                                             {"type", static_cast<int>(cfg.type)},
-                                             {"default_value", cfg.default_value},
-                                             {"min_value", cfg.min_value},
-                                             {"max_value", cfg.max_value},
-                                             {"current_value", cfg.current_value},
-                                             {"depends_on", cfg.depends_on},
-                                     });
-    }
+    const std::string json = modulePayload(mod).dump();
+    return env->NewStringUTF(json.c_str());
+}
+
+JNIEXPORT jstring JNICALL
+Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetExternalModsInfo(
+        JNIEnv *env, jclass clazz) {
+    (void)clazz;
+    std::vector<pl::runtime::RegisteredModule> modules;
+    pl::runtime::GetRegisteredModulesInfo(modules);
+    nlohmann::json payload = nlohmann::json::array();
+    for (const auto &module : modules) payload.push_back(modulePayload(module));
     const std::string json = payload.dump();
     return env->NewStringUTF(json.c_str());
 }
@@ -193,6 +209,14 @@ pl::runtime::DispatchRegisteredButtonEvent(
         id, static_cast<pl::modmenu::ButtonEvent>(event), value);
 env->ReleaseStringUTFChars(buttonId, id);
 }
+}
+
+JNIEXPORT jlong JNICALL
+Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetDrawCommandsRevision(
+        JNIEnv *env, jclass clazz) {
+    (void)env;
+    (void)clazz;
+    return static_cast<jlong>(pl::runtime::GetDrawCommandsRevision());
 }
 
 JNIEXPORT jobjectArray JNICALL
