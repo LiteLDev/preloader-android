@@ -2,6 +2,7 @@
 
 #include "pl/ModMenu.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -99,6 +100,8 @@ namespace pl::runtime {
     bool GetRegisteredButtonInfo(int index, RegisteredButton &out);
     bool GetRegisteredButtonIconBytes(const char *button_id, int width, int height, bool active,
                                       std::vector<unsigned char> &out);
+    bool RenderSvgBytesToPng(const unsigned char *svg_data, std::size_t svg_size, int width, int height,
+                             std::vector<unsigned char> &out);
     void DispatchRegisteredButtonEvent(const char *button_id,
                                        pl::modmenu::ButtonEvent event, float value);
 

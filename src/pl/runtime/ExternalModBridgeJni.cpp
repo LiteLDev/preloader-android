@@ -211,6 +211,42 @@ env->ReleaseStringUTFChars(buttonId, id);
 }
 }
 
+JNIEXPORT jbyteArray JNICALL
+Java_org_levimc_launcher_core_mods_inbuilt_MoreButtonsSvgBridge_nativeRenderSvgToPng(
+        JNIEnv *env, jclass clazz, jbyteArray svgData, jint width, jint height) {
+    (void)clazz;
+    if (!svgData || width <= 0 || height <= 0) {
+        return nullptr;
+    }
+
+    const jsize length = env->GetArrayLength(svgData);
+    if (length <= 0 || length > 4 * 1024 * 1024) {
+        return nullptr;
+    }
+
+    std::vector<unsigned char> svg(static_cast<size_t>(length));
+    env->GetByteArrayRegion(svgData, 0, length, reinterpret_cast<jbyte *>(svg.data()));
+    if (env->ExceptionCheck()) {
+        return nullptr;
+    }
+
+    std::vector<unsigned char> png;
+    if (!pl::runtime::RenderSvgBytesToPng(svg.data(), svg.size(), width, height, png) || png.empty()) {
+        return nullptr;
+    }
+
+    if (png.size() > static_cast<size_t>(std::numeric_limits<jsize>::max())) {
+        return nullptr;
+    }
+    jbyteArray result = env->NewByteArray(static_cast<jsize>(png.size()));
+    if (!result) {
+        return nullptr;
+    }
+    env->SetByteArrayRegion(result, 0, static_cast<jsize>(png.size()),
+                            reinterpret_cast<const jbyte *>(png.data()));
+    return env->ExceptionCheck() ? nullptr : result;
+}
+
 JNIEXPORT jlong JNICALL
 Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetDrawCommandsRevision(
         JNIEnv *env, jclass clazz) {

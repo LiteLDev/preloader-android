@@ -810,6 +810,14 @@ namespace pl::runtime {
         return true;
     }
 
+    bool RenderSvgBytesToPng(const unsigned char *svg_data, std::size_t svg_size, int width, int height,
+                             std::vector<unsigned char> &out) {
+        if (!svg_data || svg_size == 0 || svg_size > kMaxButtonIconBytes)
+            return false;
+        std::vector<unsigned char> data(svg_data, svg_data + svg_size);
+        return RenderSvgIconToPng(data, width, height, out);
+    }
+
     bool GetRegisteredButtonIconBytes(const char *button_id, int width, int height, bool active,
                                       std::vector<unsigned char> &out) {
         if (!button_id)
