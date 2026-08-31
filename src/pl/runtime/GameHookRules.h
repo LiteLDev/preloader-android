@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <optional>
 #include <string>
 
@@ -11,6 +12,7 @@ struct GameHookSignatures {
   std::string hudScreenDtor;
   std::string hudScreenOpen;
   std::string isShowingMenu;
+  std::optional<std::size_t> isShowingMenuVtableIndex;
 };
 
 void ConfigureGameHookRules(std::string rulesPath, std::string minecraftVersion);

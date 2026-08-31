@@ -11,6 +11,7 @@
 #include "pl/Logger.hpp"
 #include "pl/memory/Hook.hpp"
 #include "pl/memory/Signature.hpp"
+#include "pl/memory/Vtable.hpp"
 #include "pl/runtime/GameHookRules.h"
 
 namespace pl::runtime {
@@ -19,7 +20,7 @@ namespace {
 std::atomic_bool g_isPauseMenuOpen{false};
 std::atomic_bool g_isHudScreenOpen{false};
 std::atomic_bool g_isShowingMenu{false};
-std::atomic_bool g_forceGlobalModMenu{true};
+std::atomic_bool g_forceGlobalModMenu{false};
 std::once_flag g_gameHooksOnce;
 
 void (*orig_PauseMenuDtor)(void *) = nullptr;
@@ -33,6 +34,7 @@ void hook_PauseMenuDtor(void *_this) {
 void (*orig_PauseMenuOpen)(void *) = nullptr;
 void hook_PauseMenuOpen(void *_this) {
   g_isPauseMenuOpen.store(true, std::memory_order_relaxed);
+  g_isShowingMenu.store(true, std::memory_order_relaxed);
   if (orig_PauseMenuOpen) {
     orig_PauseMenuOpen(_this);
   }
@@ -41,6 +43,8 @@ void hook_PauseMenuOpen(void *_this) {
 void (*orig_HudScreenDtor)(void *) = nullptr;
 void hook_HudScreenDtor(void *_this) {
   g_isHudScreenOpen.store(false, std::memory_order_relaxed);
+  g_isPauseMenuOpen.store(false, std::memory_order_relaxed);
+  g_isShowingMenu.store(false, std::memory_order_relaxed);
   if (orig_HudScreenDtor) {
     orig_HudScreenDtor(_this);
   }
@@ -49,6 +53,8 @@ void hook_HudScreenDtor(void *_this) {
 void (*orig_HudScreenOpen)(void *) = nullptr;
 void hook_HudScreenOpen(void *_this) {
   g_isHudScreenOpen.store(true, std::memory_order_relaxed);
+  g_isPauseMenuOpen.store(false, std::memory_order_relaxed);
+  g_isShowingMenu.store(false, std::memory_order_relaxed);
   if (orig_HudScreenOpen) {
     orig_HudScreenOpen(_this);
   }
@@ -91,21 +97,23 @@ bool InstallHook(uintptr_t target, pl::memory::FuncPtr detour,
 
 void ConfigureGameHooks(std::string rulesPath, std::string minecraftVersion) {
   ConfigureGameHookRules(std::move(rulesPath), std::move(minecraftVersion));
-  g_forceGlobalModMenu.store(true, std::memory_order_relaxed);
+  g_forceGlobalModMenu.store(false, std::memory_order_relaxed);
 }
 
 void InitGameHooks() {
   std::call_once(g_gameHooksOnce, [] {
-    g_forceGlobalModMenu.store(true, std::memory_order_relaxed);
+    g_forceGlobalModMenu.store(false, std::memory_order_relaxed);
     auto signatures = LoadConfiguredGameHookSignatures();
     if (!signatures) {
       return;
     }
 
-    const std::vector<std::string> requestedSignatures{
+    std::vector<std::string> requestedSignatures{
         signatures->pauseMenuDtor, signatures->pauseMenuOpen,
-        signatures->hudScreenDtor, signatures->hudScreenOpen,
-        signatures->isShowingMenu};
+        signatures->hudScreenDtor, signatures->hudScreenOpen};
+    if (!signatures->isShowingMenu.empty()) {
+      requestedSignatures.push_back(signatures->isShowingMenu);
+    }
     auto results = pl::memory::resolveSignatures(
         requestedSignatures, "libminecraftpe.so");
 
@@ -113,8 +121,21 @@ void InitGameHooks() {
     uintptr_t pauseOpen = ResolveResult(results, signatures->pauseMenuOpen);
     uintptr_t hudDtor = ResolveResult(results, signatures->hudScreenDtor);
     uintptr_t hudOpen = ResolveResult(results, signatures->hudScreenOpen);
-    uintptr_t isShowingMenuAddr =
-        ResolveResult(results, signatures->isShowingMenu);
+    uintptr_t isShowingMenuAddr = 0;
+    if (signatures->isShowingMenuVtableIndex) {
+      isShowingMenuAddr = pl::memory::resolveVtableFunction(
+          "14ClientInstance", *signatures->isShowingMenuVtableIndex,
+          "libminecraftpe.so");
+    } else if (!signatures->isShowingMenu.empty()) {
+      isShowingMenuAddr = ResolveResult(results, signatures->isShowingMenu);
+    }
+
+    if (!pauseDtor || !pauseOpen || !hudDtor || !hudOpen ||
+        !isShowingMenuAddr) {
+      preloaderLogger.warn(
+          "Preloader runtime data is incomplete; game-only overlays remain hidden");
+      return;
+    }
 
     bool hooksReady = true;
     hooksReady &= InstallHook(pauseDtor,
@@ -140,11 +161,10 @@ void InitGameHooks() {
 
     if (!hooksReady) {
       preloaderLogger.warn(
-          "Preloader runtime data is not fully usable; forcing global Mod Menu");
+          "Preloader runtime hooks are incomplete; game-only overlays remain hidden");
       return;
     }
 
-    g_forceGlobalModMenu.store(false, std::memory_order_relaxed);
   });
 }
 

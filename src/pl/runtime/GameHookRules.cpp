@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <fstream>
 #include <iterator>
 #include <limits>
@@ -60,6 +61,25 @@ std::optional<std::string> ReadStringField(const nlohmann::json &object,
     return std::nullopt;
   }
   return value;
+}
+
+
+std::optional<std::size_t> ReadSizeField(const nlohmann::json &object,
+                                         const char *key) {
+  if (!object.is_object()) {
+    return std::nullopt;
+  }
+
+  auto it = object.find(key);
+  if (it == object.end() || !it->is_number_unsigned()) {
+    return std::nullopt;
+  }
+
+  const auto value = it->get<std::uint64_t>();
+  if (value > std::numeric_limits<std::size_t>::max()) {
+    return std::nullopt;
+  }
+  return static_cast<std::size_t>(value);
 }
 
 std::vector<int> ParseVersionParts(std::string_view value) {
@@ -139,9 +159,10 @@ std::optional<GameHookSignatures> ParseHookSignatures(const nlohmann::json &rule
   auto hudScreenDtor = ReadStringField(*sigs, "hudScreenDtorSig");
   auto hudScreenOpen = ReadStringField(*sigs, "hudScreenOpenSig");
   auto isShowingMenu = ReadStringField(*sigs, "isShowingMenuSig");
+  auto isShowingMenuVtableIndex = ReadSizeField(rule, "isShowingMenuVtableIndex");
 
   if (!pauseMenuDtor || !pauseMenuOpen || !hudScreenDtor || !hudScreenOpen ||
-      !isShowingMenu) {
+      (!isShowingMenu && !isShowingMenuVtableIndex)) {
     return std::nullopt;
   }
 
@@ -150,7 +171,8 @@ std::optional<GameHookSignatures> ParseHookSignatures(const nlohmann::json &rule
       *pauseMenuOpen,
       *hudScreenDtor,
       *hudScreenOpen,
-      *isShowingMenu,
+      isShowingMenu.value_or(""),
+      isShowingMenuVtableIndex,
   };
 }
 
