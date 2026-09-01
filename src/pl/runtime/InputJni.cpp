@@ -140,6 +140,19 @@ Java_org_levimc_launcher_preloader_PreloaderInput_nativeOnMouse(
 }
 
 JNIEXPORT void JNICALL
+Java_org_levimc_launcher_preloader_PreloaderInput_nativeOnDocumentResult(
+    JNIEnv *env, jclass clazz, jboolean success, jstring path,
+    jstring displayName, jstring error) {
+  (void)clazz;
+  pl::runtime::DispatchDocumentResult({
+      .success = success == JNI_TRUE,
+      .path = ToStdString(env, path),
+      .displayName = ToStdString(env, displayName),
+      .error = ToStdString(env, error),
+  });
+}
+
+JNIEXPORT void JNICALL
 Java_org_levimc_launcher_preloader_PreloaderInput_nativeSetActivity(
     JNIEnv *env, jclass clazz, jobject activity) {
   (void)clazz;
@@ -152,6 +165,7 @@ Java_org_levimc_launcher_preloader_PreloaderInput_nativeClearActivity(
     JNIEnv *env, jclass clazz) {
   (void)clazz;
 
+  pl::runtime::ClearDocumentRequest();
   pl::runtime::ClearActivity(env);
 }
 

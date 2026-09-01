@@ -19,6 +19,7 @@ std::vector<pl::input::TouchCallback> g_cppTouchCallbacks;
 std::vector<pl::input::KeyCallback> g_cppKeyCallbacks;
 std::vector<pl::input::TextInputCallback> g_cppTextInputCallbacks;
 std::vector<pl::input::MouseCallback> g_cppMouseCallbacks;
+pl::input::DocumentCallback g_documentCallback;
 std::mutex g_callbackMutex;
 
 void RegisterLegacyTouchCallback(PreloaderInput_OnTouch_Fn callback) {
@@ -163,6 +164,49 @@ bool DispatchMouse(int button, bool isDown) {
   return consumed;
 }
 
+bool RequestDocument(std::string mimeType,
+                     pl::input::DocumentCallback callback) {
+  if (!callback) {
+    return false;
+  }
+  {
+    std::lock_guard<std::mutex> lock(g_callbackMutex);
+    if (g_documentCallback) {
+      return false;
+    }
+    g_documentCallback = std::move(callback);
+  }
+  if (mimeType.empty()) {
+    mimeType = "*/*";
+  }
+  if (CallActivityStringMethod("openPreloaderDocumentPicker", mimeType)) {
+    return true;
+  }
+  std::lock_guard<std::mutex> lock(g_callbackMutex);
+  g_documentCallback = {};
+  return false;
+}
+
+void DispatchDocumentResult(pl::input::DocumentResult result) {
+  pl::input::DocumentCallback callback;
+  {
+    std::lock_guard<std::mutex> lock(g_callbackMutex);
+    callback = std::move(g_documentCallback);
+    g_documentCallback = {};
+  }
+  if (callback) {
+    try {
+      callback(result);
+    } catch (...) {
+    }
+  }
+}
+
+void ClearDocumentRequest() {
+  std::lock_guard<std::mutex> lock(g_callbackMutex);
+  g_documentCallback = {};
+}
+
 void RegisterCppTouchCallback(pl::input::TouchCallback callback) {
   std::lock_guard<std::mutex> lock(g_callbackMutex);
   g_cppTouchCallbacks.push_back(std::move(callback));
@@ -211,4 +255,22 @@ void showKeyboard() { pl::runtime::ShowKeyboard(); }
 
 void hideKeyboard() { pl::runtime::HideKeyboard(); }
 
+bool openDocument(std::string mimeType, DocumentCallback callback) {
+  return pl::runtime::RequestDocument(std::move(mimeType),
+                                      std::move(callback));
+}
+
 } // namespace pl::input
+
+extern "C" PL_EXPORT bool PLRequestDocument(
+    const char *mimeType, PLDocumentResultCallback callback, void *userData) {
+  if (!callback) {
+    return false;
+  }
+  return pl::runtime::RequestDocument(
+      mimeType ? mimeType : "*/*",
+      [callback, userData](const pl::input::DocumentResult &result) {
+        callback(result.success, result.path.c_str(), result.displayName.c_str(),
+                 result.error.c_str(), userData);
+      });
+}

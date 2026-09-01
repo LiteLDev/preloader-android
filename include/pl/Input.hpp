@@ -46,10 +46,18 @@ struct MouseEvent {
   bool isDown{};
 };
 
+struct DocumentResult {
+  bool success{};
+  std::string path;
+  std::string displayName;
+  std::string error;
+};
+
 using TouchCallback = std::function<bool(const TouchEvent &)>;
 using KeyCallback = std::function<bool(const KeyEvent &)>;
 using TextInputCallback = std::function<bool(const TextInputEvent &)>;
 using MouseCallback = std::function<bool(const MouseEvent &)>;
+using DocumentCallback = std::function<void(const DocumentResult &)>;
 
 /**
  * @brief Registers a process-wide touch callback.
@@ -81,4 +89,13 @@ PL_EXPORT void showKeyboard();
  */
 PL_EXPORT void hideKeyboard();
 
+PL_EXPORT bool openDocument(std::string mimeType, DocumentCallback callback);
+
 } // namespace pl::input
+
+using PLDocumentResultCallback = void (*)(bool success, const char *path,
+                                          const char *displayName,
+                                          const char *error, void *userData);
+
+extern "C" PL_EXPORT bool PLRequestDocument(
+    const char *mimeType, PLDocumentResultCallback callback, void *userData);
