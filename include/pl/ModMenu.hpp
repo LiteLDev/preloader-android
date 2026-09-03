@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "pl/Export.hpp"
+#include "pl/ModMenuConfig.hpp"
 
 namespace pl::modmenu {
 

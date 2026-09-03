@@ -63,6 +63,8 @@ namespace pl::runtime {
             std::string depends_on;
         };
         std::vector<ConfigEntry> configs;
+        std::string config_schema_json;
+        std::uint64_t config_schema_revision{};
         std::vector<InternalDrawCommand> draw_commands;
         std::vector<InternalHudEditorElement> hud_editor_elements;
     };
@@ -109,6 +111,10 @@ namespace pl::runtime {
     void ToggleRegisteredModule(const char *module_id, bool enabled);
     void SetRegisteredModuleConfig(const char *module_id, const char *key,
                                    const char *value);
+    bool SetRegisteredModuleConfigSchema(std::string_view moduleId, std::string_view schemaJson);
+    void ClearRegisteredModuleConfigSchema(std::string_view moduleId);
+    bool GetRegisteredModuleConfigSchema(std::string_view moduleId, std::string &out);
+    std::uint64_t GetRegisteredModuleConfigSchemaRevision(std::string_view moduleId);
     void UnregisterModulesForModId(const std::string &modId);
 
     int GetRegisteredButtonCount();

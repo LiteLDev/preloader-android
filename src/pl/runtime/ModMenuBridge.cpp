@@ -11,12 +11,15 @@
 #include <span>
 #include <string_view>
 #include <utility>
+#include <unordered_set>
 #include <vector>
 
 #include <lunasvg.h>
+#include <nlohmann/json.hpp>
 
 #include "pl/Logger.hpp"
 #include "pl/ModMenu.hpp"
+#include "pl/ModMenuConfig.hpp"
 #include "pl/Input.hpp"
 
 namespace pl::runtime {
@@ -30,6 +33,10 @@ namespace pl::runtime {
         constexpr size_t kMaxConfigStringLength = 2048;
         constexpr size_t kMaxDrawTextLength = 4096;
         constexpr int kMaxConfigCount = 128;
+        constexpr std::size_t kMaxConfigSchemaBytes = 512 * 1024;
+        constexpr int kMaxConfigSchemaCategories = 48;
+        constexpr int kMaxConfigSchemaNodes = 512;
+        constexpr int kMaxConfigSchemaOptions = 2048;
         constexpr int kMaxDrawCommandCount = 4096;
         constexpr int kMaxHudEditorElementCount = 2048;
         constexpr int kMaxFontBytes = 8 * 1024 * 1024;
@@ -175,6 +182,121 @@ namespace pl::runtime {
         bool ReadOptionalString(std::string_view value, size_t maxLength,
                                 const char *fieldName, std::string &out) {
             return ReadString(value, maxLength, fieldName, false, out);
+        }
+
+        bool ValidateConfigSchemaJson(std::string_view moduleId, std::string_view schemaJson) {
+            if (schemaJson.empty() || schemaJson.size() > kMaxConfigSchemaBytes) {
+                preloaderLogger.error("Rejected Mod Menu V2 schema for {}: invalid size {}", moduleId, schemaJson.size());
+                return false;
+            }
+            try {
+                const auto root = nlohmann::json::parse(schemaJson);
+                if (!root.is_object() || root.value("version", 0) != 2 ||
+                    !root.contains("categories") || !root.contains("nodes")) {
+                    preloaderLogger.error("Rejected Mod Menu V2 schema for {}: unsupported or incomplete schema", moduleId);
+                    return false;
+                }
+                const auto &categories = root.at("categories");
+                const auto &nodes = root.at("nodes");
+                if (!categories.is_array() || !nodes.is_array() ||
+                    categories.size() > kMaxConfigSchemaCategories || nodes.size() > kMaxConfigSchemaNodes) {
+                    preloaderLogger.error("Rejected Mod Menu V2 schema for {}: invalid category/node count", moduleId);
+                    return false;
+                }
+
+                static const std::unordered_set<std::string> validTypes = {
+                    "toggle", "slider_int", "slider_float", "range_slider", "choice",
+                    "multi_choice", "toggle_group", "ordered_list", "color", "keybind",
+                    "text", "multiline_text", "button", "info", "section"
+                };
+                static const std::unordered_set<std::string> validStyles = {
+                    "auto", "radio", "segmented", "dropdown", "chips", "checklist"
+                };
+                static const std::unordered_set<std::string> validOps = {
+                    "equals", "not_equals", "truthy", "falsy", "contains"
+                };
+
+                std::unordered_set<std::string> categoryIds;
+                for (const auto &category : categories) {
+                    if (!category.is_object()) return false;
+                    const std::string id = category.value("id", std::string{});
+                    const std::string title = category.value("title", std::string{});
+                    const std::string description = category.value("description", std::string{});
+                    if (id.empty() || id.size() > kMaxConfigStringLength ||
+                        title.size() > kMaxConfigStringLength || description.size() > kMaxDescriptionLength ||
+                        !categoryIds.insert(id).second) {
+                        return false;
+                    }
+                }
+
+                const std::string defaultCategory = root.value("default_category", std::string{});
+                if (!defaultCategory.empty() && !categoryIds.contains(defaultCategory)) return false;
+
+                std::unordered_set<std::string> nodeIds;
+                std::size_t optionCount = 0;
+                for (const auto &node : nodes) {
+                    if (!node.is_object()) return false;
+                    const std::string id = node.value("id", std::string{});
+                    const std::string key = node.value("key", std::string{});
+                    const std::string category = node.value("category", std::string{});
+                    const std::string type = node.value("type", std::string{});
+                    const std::string style = node.value("style", std::string{"auto"});
+                    if (id.empty() || id.size() > kMaxConfigStringLength ||
+                        key.size() > kMaxConfigStringLength || category.size() > kMaxConfigStringLength ||
+                        node.value("title", std::string{}).size() > kMaxConfigStringLength ||
+                        node.value("description", std::string{}).size() > kMaxDescriptionLength ||
+                        node.value("section", std::string{}).size() > kMaxConfigStringLength ||
+                        node.value("unit", std::string{}).size() > kMaxConfigStringLength ||
+                        node.value("placeholder", std::string{}).size() > kMaxDescriptionLength ||
+                        !nodeIds.insert(id).second || !validTypes.contains(type) || !validStyles.contains(style)) {
+                        return false;
+                    }
+                    if (!category.empty() && !categoryIds.contains(category)) return false;
+                    if (type != "section" && type != "info" && key.empty()) return false;
+                    if (node.value("max_length", 0) < 0 || node.value("max_length", 0) > 65536) return false;
+
+                    if (node.contains("options")) {
+                        const auto &options = node.at("options");
+                        if (!options.is_array()) return false;
+                        optionCount += options.size();
+                        if (optionCount > kMaxConfigSchemaOptions) return false;
+                        std::unordered_set<std::string> optionValues;
+                        for (const auto &option : options) {
+                            if (!option.is_object()) return false;
+                            const std::string value = option.value("value", std::string{});
+                            const std::string optionKey = option.value("key", std::string{});
+                            if (value.size() > kMaxConfigStringLength || optionKey.size() > kMaxConfigStringLength ||
+                                option.value("label", std::string{}).size() > kMaxConfigStringLength ||
+                                option.value("description", std::string{}).size() > kMaxDescriptionLength ||
+                                option.value("current_value", std::string{}).size() > kMaxConfigStringLength) {
+                                return false;
+                            }
+                            if (type != "toggle_group" && !value.empty() && !optionValues.insert(value).second) return false;
+                            if (type == "toggle_group" && value.empty() && optionKey.empty()) return false;
+                        }
+                    }
+
+                    for (const char *field : {"visible_when", "enabled_when"}) {
+                        if (!node.contains(field)) continue;
+                        const auto &conditions = node.at(field);
+                        if (!conditions.is_array() || conditions.size() > 32) return false;
+                        for (const auto &condition : conditions) {
+                            if (!condition.is_object()) return false;
+                            const std::string conditionKey = condition.value("key", std::string{});
+                            const std::string op = condition.value("op", std::string{"equals"});
+                            if (conditionKey.empty() || conditionKey.size() > kMaxConfigStringLength ||
+                                condition.value("value", std::string{}).size() > kMaxConfigStringLength ||
+                                !validOps.contains(op)) {
+                                return false;
+                            }
+                        }
+                    }
+                }
+                return true;
+            } catch (...) {
+                preloaderLogger.error("Rejected Mod Menu V2 schema for {}: invalid JSON", moduleId);
+                return false;
+            }
         }
 
         bool IsValidConfigType(pl::modmenu::ConfigType type) {
@@ -826,6 +948,7 @@ namespace pl::runtime {
             item.enabled = source.enabled;
             item.hide_in_hud_editor = source.hide_in_hud_editor;
             item.configs = source.configs;
+            item.config_schema_revision = source.config_schema_revision;
             out.push_back(std::move(item));
         }
     }
@@ -880,6 +1003,50 @@ namespace pl::runtime {
         }
         if (callback)
             callback(module_id, key, safeValue);
+    }
+
+    bool SetRegisteredModuleConfigSchema(std::string_view moduleId, std::string_view schemaJson) {
+        if (!ValidateConfigSchemaJson(moduleId, schemaJson)) return false;
+        std::lock_guard<std::mutex> lock(g_modMenuMutex);
+        for (auto &mod : g_registeredModules) {
+            if (mod.module_id != moduleId) continue;
+            if (mod.config_schema_json == schemaJson) return true;
+            mod.config_schema_json.assign(schemaJson);
+            ++mod.config_schema_revision;
+            if (mod.config_schema_revision == 0) mod.config_schema_revision = 1;
+            return true;
+        }
+        return false;
+    }
+
+    void ClearRegisteredModuleConfigSchema(std::string_view moduleId) {
+        std::lock_guard<std::mutex> lock(g_modMenuMutex);
+        for (auto &mod : g_registeredModules) {
+            if (mod.module_id != moduleId) continue;
+            mod.config_schema_json.clear();
+            mod.config_schema_revision = 0;
+            return;
+        }
+    }
+
+    bool GetRegisteredModuleConfigSchema(std::string_view moduleId, std::string &out) {
+        std::lock_guard<std::mutex> lock(g_modMenuMutex);
+        for (const auto &mod : g_registeredModules) {
+            if (mod.module_id == moduleId) {
+                out = mod.config_schema_json;
+                return !out.empty();
+            }
+        }
+        out.clear();
+        return false;
+    }
+
+    std::uint64_t GetRegisteredModuleConfigSchemaRevision(std::string_view moduleId) {
+        std::lock_guard<std::mutex> lock(g_modMenuMutex);
+        for (const auto &mod : g_registeredModules) {
+            if (mod.module_id == moduleId) return mod.config_schema_revision;
+        }
+        return 0;
     }
 
     void UnregisterModulesForModId(const std::string &modId) {
@@ -1178,6 +1345,14 @@ namespace pl::modmenu {
     void submitDrawCommands(std::string_view moduleId,
                             std::span<const DrawCommand> commands) {
         pl::runtime::SubmitCppDrawCommands(moduleId, commands);
+    }
+
+    bool setConfigSchemaJson(std::string_view moduleId, std::string_view schemaJson) {
+        return pl::runtime::SetRegisteredModuleConfigSchema(moduleId, schemaJson);
+    }
+
+    void clearConfigSchema(std::string_view moduleId) {
+        pl::runtime::ClearRegisteredModuleConfigSchema(moduleId);
     }
 
     void submitHudEditorElements(

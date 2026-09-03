@@ -17,6 +17,7 @@ static nlohmann::json modulePayload(const pl::runtime::RegisteredModule &mod) {
             {"mod_id", mod.mod_id},
             {"enabled", mod.enabled},
             {"hide_in_hud_editor", mod.hide_in_hud_editor},
+            {"config_schema_revision", mod.config_schema_revision},
             {"configs", nlohmann::json::array()},
     };
     for (const auto &cfg : mod.configs) {
@@ -87,6 +88,31 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetExternalMo
     for (const auto &module : modules) payload.push_back(modulePayload(module));
     const std::string json = payload.dump();
     return env->NewStringUTF(json.c_str());
+}
+
+JNIEXPORT jstring JNICALL
+Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetExternalModConfigSchema(
+        JNIEnv *env, jclass clazz, jstring moduleId) {
+    (void)clazz;
+    if (!moduleId) return env->NewStringUTF("");
+    const char *id = env->GetStringUTFChars(moduleId, nullptr);
+    if (!id) return env->NewStringUTF("");
+    std::string schema;
+    pl::runtime::GetRegisteredModuleConfigSchema(id, schema);
+    env->ReleaseStringUTFChars(moduleId, id);
+    return env->NewStringUTF(schema.c_str());
+}
+
+JNIEXPORT jlong JNICALL
+Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetExternalModConfigSchemaRevision(
+        JNIEnv *env, jclass clazz, jstring moduleId) {
+    (void)clazz;
+    if (!moduleId) return 0;
+    const char *id = env->GetStringUTFChars(moduleId, nullptr);
+    if (!id) return 0;
+    const auto revision = pl::runtime::GetRegisteredModuleConfigSchemaRevision(id);
+    env->ReleaseStringUTFChars(moduleId, id);
+    return static_cast<jlong>(revision);
 }
 
 JNIEXPORT void JNICALL
