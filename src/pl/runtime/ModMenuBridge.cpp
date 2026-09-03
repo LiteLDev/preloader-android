@@ -252,7 +252,11 @@ namespace pl::runtime {
                         return false;
                     }
                     if (!category.empty() && !categoryIds.contains(category)) return false;
-                    if (type != "section" && type != "info" && key.empty()) return false;
+                    if (type != "section" && type != "info" && type != "toggle_group" && key.empty()) {
+                        preloaderLogger.error("Rejected Mod Menu V2 schema for {}: node {} ({}) requires a key",
+                                              moduleId, id, type);
+                        return false;
+                    }
                     if (node.value("max_length", 0) < 0 || node.value("max_length", 0) > 65536) return false;
 
                     if (node.contains("options")) {
@@ -1006,16 +1010,26 @@ namespace pl::runtime {
     }
 
     bool SetRegisteredModuleConfigSchema(std::string_view moduleId, std::string_view schemaJson) {
-        if (!ValidateConfigSchemaJson(moduleId, schemaJson)) return false;
+        if (!ValidateConfigSchemaJson(moduleId, schemaJson)) {
+            preloaderLogger.error("Rejected Mod Menu V2 schema for {}: validation failed; retaining existing configuration",
+                                  moduleId);
+            return false;
+        }
         std::lock_guard<std::mutex> lock(g_modMenuMutex);
         for (auto &mod : g_registeredModules) {
             if (mod.module_id != moduleId) continue;
             if (mod.config_schema_json == schemaJson) return true;
+            const bool firstSchema = mod.config_schema_revision == 0;
             mod.config_schema_json.assign(schemaJson);
             ++mod.config_schema_revision;
             if (mod.config_schema_revision == 0) mod.config_schema_revision = 1;
+            if (firstSchema) {
+                preloaderLogger.info("Registered Mod Menu V2 schema for {}: revision {}",
+                                     moduleId, mod.config_schema_revision);
+            }
             return true;
         }
+        preloaderLogger.error("Rejected Mod Menu V2 schema for {}: module is not registered", moduleId);
         return false;
     }
 
