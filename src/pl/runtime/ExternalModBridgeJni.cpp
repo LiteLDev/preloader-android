@@ -34,6 +34,26 @@ static nlohmann::json modulePayload(const pl::runtime::RegisteredModule &mod) {
     return payload;
 }
 
+static nlohmann::json hudEditorElementPayload(
+        const pl::runtime::InternalHudEditorElement &element) {
+    return {
+            {"module_id", element.module_id},
+            {"element_id", element.element_id},
+            {"display_name", element.display_name},
+            {"position_key_x", element.position_key_x},
+            {"position_key_y", element.position_key_y},
+            {"snap_group", element.snap_group},
+            {"x", element.x},
+            {"y", element.y},
+            {"width", element.width},
+            {"height", element.height},
+            {"grid_size", element.grid_size},
+            {"snap_threshold", element.snap_threshold},
+            {"grid_gap", element.grid_gap},
+            {"snap_flags", element.snap_flags},
+    };
+}
+
 extern "C" {
 
 JNIEXPORT jint JNICALL
@@ -245,6 +265,28 @@ Java_org_levimc_launcher_core_mods_inbuilt_MoreButtonsSvgBridge_nativeRenderSvgT
     env->SetByteArrayRegion(result, 0, static_cast<jsize>(png.size()),
                             reinterpret_cast<const jbyte *>(png.data()));
     return env->ExceptionCheck() ? nullptr : result;
+}
+
+JNIEXPORT jstring JNICALL
+Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetHudEditorElementsInfo(
+        JNIEnv *env, jclass clazz) {
+    (void)clazz;
+    std::vector<pl::runtime::InternalHudEditorElement> elements;
+    pl::runtime::GetHudEditorElements(elements);
+    nlohmann::json payload = nlohmann::json::array();
+    for (const auto &element : elements) {
+        payload.push_back(hudEditorElementPayload(element));
+    }
+    const std::string json = payload.dump();
+    return env->NewStringUTF(json.c_str());
+}
+
+JNIEXPORT void JNICALL
+Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeSetHudSurfaceSize(
+        JNIEnv *env, jclass clazz, jfloat width, jfloat height) {
+    (void)env;
+    (void)clazz;
+    pl::runtime::SetHudSurfaceSize(width, height);
 }
 
 JNIEXPORT jlong JNICALL

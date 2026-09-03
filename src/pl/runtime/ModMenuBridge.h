@@ -23,6 +23,20 @@ namespace pl::runtime {
         std::string image_id;
     };
 
+    struct InternalHudEditorElement {
+        std::string module_id;
+        std::string element_id;
+        std::string display_name;
+        std::string position_key_x;
+        std::string position_key_y;
+        std::string snap_group;
+        float x, y, width, height;
+        float grid_size;
+        float snap_threshold;
+        float grid_gap;
+        std::uint32_t snap_flags;
+    };
+
     struct RegisteredModule {
         std::string module_id;
         std::string display_name;
@@ -50,6 +64,7 @@ namespace pl::runtime {
         };
         std::vector<ConfigEntry> configs;
         std::vector<InternalDrawCommand> draw_commands;
+        std::vector<InternalHudEditorElement> hud_editor_elements;
     };
 
     struct RegisteredButton {
@@ -106,7 +121,10 @@ namespace pl::runtime {
                                        pl::modmenu::ButtonEvent event, float value);
 
     void GetDrawCommands(std::vector<InternalDrawCommand> &out);
+    void GetHudEditorElements(std::vector<InternalHudEditorElement> &out);
     uint64_t GetDrawCommandsRevision();
+    void SetHudSurfaceSize(float width, float height);
+    pl::modmenu::HudSurfaceSize GetHudSurfaceSize();
 
     bool RegisterFontInternal(const char *font_id, const unsigned char *ttf_data,
                               int ttf_size);

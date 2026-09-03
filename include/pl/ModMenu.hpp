@@ -83,6 +83,34 @@ namespace pl::modmenu {
         Image,
     };
 
+    enum HudSnapFlags : std::uint32_t {
+        HudSnapNone = 0,
+        HudSnapGrid = 1u << 0,
+        HudSnapElements = 1u << 1,
+        HudSnapScreenCenter = 1u << 2,
+    };
+
+    struct HudEditorElement {
+        std::string elementId;
+        std::string displayName;
+        std::string positionKeyX{"hudPosX"};
+        std::string positionKeyY{"hudPosY"};
+        std::string snapGroup;
+        float x{};
+        float y{};
+        float width{};
+        float height{};
+        float gridSize{};
+        float snapThreshold{12.0f};
+        float gridGap{4.0f};
+        std::uint32_t snapFlags{};
+    };
+
+    struct HudSurfaceSize {
+        float width{};
+        float height{};
+    };
+
 /**
  * @brief A single module configuration entry.
  */
@@ -182,6 +210,12 @@ namespace pl::modmenu {
  */
     PL_EXPORT void submitDrawCommands(std::string_view moduleId,
                                       std::span<const DrawCommand> commands);
+
+    PL_EXPORT void submitHudEditorElements(
+            std::string_view moduleId,
+            std::span<const HudEditorElement> elements);
+
+    PL_EXPORT HudSurfaceSize getHudSurfaceSize();
 
 /**
  * @brief Registers a TrueType font for overlay text rendering.

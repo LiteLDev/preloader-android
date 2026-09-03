@@ -31,6 +31,7 @@ namespace pl::runtime {
         constexpr size_t kMaxDrawTextLength = 4096;
         constexpr int kMaxConfigCount = 128;
         constexpr int kMaxDrawCommandCount = 4096;
+        constexpr int kMaxHudEditorElementCount = 2048;
         constexpr int kMaxFontBytes = 8 * 1024 * 1024;
         constexpr int kMaxButtonIconBytes = 4 * 1024 * 1024;
         constexpr int kDefaultRenderedIconSize = 128;
@@ -44,6 +45,8 @@ namespace pl::runtime {
         std::vector<RegisteredButton> g_registeredButtons;
         std::mutex g_modMenuMutex;
         std::atomic<uint64_t> g_drawCommandsRevision{1};
+        std::atomic<float> g_hudSurfaceWidth{0.0f};
+        std::atomic<float> g_hudSurfaceHeight{0.0f};
         thread_local std::vector<std::string> g_currentOwnerModIds;
         
         static bool g_keyCallbackRegistered = false;
@@ -361,6 +364,55 @@ namespace pl::runtime {
             return true;
         }
 
+        bool ValidateHudEditorElements(
+                std::string_view moduleId,
+                std::span<const pl::modmenu::HudEditorElement> elements) {
+            if (elements.size() > kMaxHudEditorElementCount) {
+                preloaderLogger.error("Rejected HUD editor elements for {}: invalid count {}",
+                                      moduleId, elements.size());
+                return false;
+            }
+            constexpr std::uint32_t allowedFlags =
+                    pl::modmenu::HudSnapGrid | pl::modmenu::HudSnapElements |
+                    pl::modmenu::HudSnapScreenCenter;
+            for (size_t i = 0; i < elements.size(); ++i) {
+                const auto &element = elements[i];
+                if (!std::isfinite(element.x) || !std::isfinite(element.y) ||
+                    !std::isfinite(element.width) || !std::isfinite(element.height) ||
+                    !std::isfinite(element.gridSize) ||
+                    !std::isfinite(element.snapThreshold) ||
+                    !std::isfinite(element.gridGap) || element.width < 0.0f ||
+                    element.height < 0.0f || element.gridSize < 0.0f ||
+                    element.snapThreshold < 0.0f || element.gridGap < 0.0f ||
+                    (element.snapFlags & ~allowedFlags) != 0) {
+                    preloaderLogger.error("Rejected HUD editor element {} for {}", i,
+                                          moduleId);
+                    return false;
+                }
+                std::string unused;
+                if (!ReadRequiredString(element.elementId, kMaxModuleIdLength,
+                                        "HUD element id", unused) ||
+                    !ReadOptionalString(element.displayName, kMaxDisplayNameLength,
+                                        "HUD element display name", unused) ||
+                    !ReadRequiredString(element.positionKeyX, kMaxModuleIdLength,
+                                        "HUD element position key x", unused) ||
+                    !ReadRequiredString(element.positionKeyY, kMaxModuleIdLength,
+                                        "HUD element position key y", unused) ||
+                    !ReadOptionalString(element.snapGroup, kMaxModuleIdLength,
+                                        "HUD element snap group", unused)) {
+                    return false;
+                }
+                for (size_t j = 0; j < i; ++j) {
+                    if (elements[j].elementId == element.elementId) {
+                        preloaderLogger.error("Rejected duplicate HUD editor element {} for {}",
+                                              element.elementId, moduleId);
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
         bool RegisterCppModule(const pl::modmenu::ModuleInfo &info) {
             std::string moduleId;
             std::string displayName;
@@ -473,7 +525,7 @@ namespace pl::runtime {
                     std::remove_if(g_registeredModules.begin(), g_registeredModules.end(),
                                    [module_id, &drawChanged](const RegisteredModule &m) {
                                        if (m.module_id != module_id) return false;
-                                       drawChanged |= m.enabled && !m.draw_commands.empty();
+                                       drawChanged |= m.enabled && (!m.draw_commands.empty() || !m.hud_editor_elements.empty());
                                        return true;
                                    }),
                     g_registeredModules.end());
@@ -542,6 +594,68 @@ namespace pl::runtime {
                     }
                     return;
                 }
+            }
+        }
+
+        bool HudEditorElementsEqual(
+                const RegisteredModule &mod,
+                std::span<const pl::modmenu::HudEditorElement> elements) {
+            if (mod.hud_editor_elements.size() != elements.size()) return false;
+            for (size_t i = 0; i < elements.size(); ++i) {
+                const auto &left = mod.hud_editor_elements[i];
+                const auto &right = elements[i];
+                if (left.element_id != right.elementId ||
+                    left.display_name != right.displayName ||
+                    left.position_key_x != right.positionKeyX ||
+                    left.position_key_y != right.positionKeyY ||
+                    left.snap_group != right.snapGroup || left.x != right.x ||
+                    left.y != right.y || left.width != right.width ||
+                    left.height != right.height || left.grid_size != right.gridSize ||
+                    left.snap_threshold != right.snapThreshold ||
+                    left.grid_gap != right.gridGap || left.snap_flags != right.snapFlags) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        void SubmitCppHudEditorElements(
+                std::string_view moduleIdView,
+                std::span<const pl::modmenu::HudEditorElement> elements) {
+            std::string moduleId;
+            if (!ReadRequiredString(moduleIdView, kMaxModuleIdLength, "module_id",
+                                    moduleId) ||
+                !ValidateHudEditorElements(moduleId, elements)) {
+                return;
+            }
+            std::lock_guard<std::mutex> lock(g_modMenuMutex);
+            for (auto &mod : g_registeredModules) {
+                if (mod.module_id != moduleId) continue;
+                if (HudEditorElementsEqual(mod, elements)) return;
+                mod.hud_editor_elements.clear();
+                mod.hud_editor_elements.reserve(elements.size());
+                for (const auto &element : elements) {
+                    InternalHudEditorElement out;
+                    out.module_id = moduleId;
+                    out.element_id = element.elementId;
+                    out.display_name = element.displayName;
+                    out.position_key_x = element.positionKeyX;
+                    out.position_key_y = element.positionKeyY;
+                    out.snap_group = element.snapGroup;
+                    out.x = element.x;
+                    out.y = element.y;
+                    out.width = element.width;
+                    out.height = element.height;
+                    out.grid_size = element.gridSize;
+                    out.snap_threshold = element.snapThreshold;
+                    out.grid_gap = element.gridGap;
+                    out.snap_flags = element.snapFlags;
+                    mod.hud_editor_elements.push_back(std::move(out));
+                }
+                if (mod.enabled) {
+                    g_drawCommandsRevision.fetch_add(1, std::memory_order_release);
+                }
+                return;
             }
         }
 
@@ -724,7 +838,8 @@ namespace pl::runtime {
             std::lock_guard<std::mutex> lock(g_modMenuMutex);
             for (auto &mod : g_registeredModules) {
                 if (mod.module_id == module_id) {
-                    if (mod.enabled != enabled && !mod.draw_commands.empty()) {
+                    if (mod.enabled != enabled &&
+                        (!mod.draw_commands.empty() || !mod.hud_editor_elements.empty())) {
                         g_drawCommandsRevision.fetch_add(1, std::memory_order_release);
                     }
                     mod.enabled = enabled;
@@ -777,7 +892,7 @@ namespace pl::runtime {
                 std::remove_if(g_registeredModules.begin(), g_registeredModules.end(),
                                [&modId, &drawChanged](const RegisteredModule &m) {
                                    if (m.mod_id != modId) return false;
-                                   drawChanged |= m.enabled && !m.draw_commands.empty();
+                                   drawChanged |= m.enabled && (!m.draw_commands.empty() || !m.hud_editor_elements.empty());
                                    return true;
                                }),
                 g_registeredModules.end());
@@ -882,6 +997,33 @@ namespace pl::runtime {
                 out.insert(out.end(), mod.draw_commands.begin(), mod.draw_commands.end());
             }
         }
+    }
+
+    void GetHudEditorElements(std::vector<InternalHudEditorElement> &out) {
+        std::lock_guard<std::mutex> lock(g_modMenuMutex);
+        size_t elementCount = 0;
+        for (const auto &mod : g_registeredModules) {
+            if (mod.enabled) elementCount += mod.hud_editor_elements.size();
+        }
+        out.reserve(out.size() + elementCount);
+        for (const auto &mod : g_registeredModules) {
+            if (mod.enabled && !mod.hud_editor_elements.empty()) {
+                out.insert(out.end(), mod.hud_editor_elements.begin(),
+                           mod.hud_editor_elements.end());
+            }
+        }
+    }
+
+    void SetHudSurfaceSize(float width, float height) {
+        if (!std::isfinite(width) || width < 0.0f) width = 0.0f;
+        if (!std::isfinite(height) || height < 0.0f) height = 0.0f;
+        g_hudSurfaceWidth.store(width, std::memory_order_release);
+        g_hudSurfaceHeight.store(height, std::memory_order_release);
+    }
+
+    pl::modmenu::HudSurfaceSize GetHudSurfaceSize() {
+        return {g_hudSurfaceWidth.load(std::memory_order_acquire),
+                g_hudSurfaceHeight.load(std::memory_order_acquire)};
     }
 
     uint64_t GetDrawCommandsRevision() {
@@ -1036,6 +1178,16 @@ namespace pl::modmenu {
     void submitDrawCommands(std::string_view moduleId,
                             std::span<const DrawCommand> commands) {
         pl::runtime::SubmitCppDrawCommands(moduleId, commands);
+    }
+
+    void submitHudEditorElements(
+            std::string_view moduleId,
+            std::span<const HudEditorElement> elements) {
+        pl::runtime::SubmitCppHudEditorElements(moduleId, elements);
+    }
+
+    HudSurfaceSize getHudSurfaceSize() {
+        return pl::runtime::GetHudSurfaceSize();
     }
 
     bool registerFont(std::string_view fontId,
