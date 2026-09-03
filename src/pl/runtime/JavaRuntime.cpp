@@ -10,9 +10,12 @@ JavaVM *g_vm = nullptr;
 jobject g_activity = nullptr;
 
 bool AttachCurrentThread(JNIEnv **env) {
-  return g_vm && env &&
-      g_vm->functions->AttachCurrentThread(
-          g_vm, reinterpret_cast<void **>(env), nullptr) == JNI_OK;
+  if (!g_vm || !env) return false;
+#if defined(__ANDROID__)
+  return g_vm->AttachCurrentThread(env, nullptr) == JNI_OK;
+#else
+  return g_vm->AttachCurrentThread(reinterpret_cast<void **>(env), nullptr) == JNI_OK;
+#endif
 }
 
 } // namespace
