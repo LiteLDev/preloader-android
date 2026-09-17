@@ -21,6 +21,7 @@
 #include "pl/ModMenu.hpp"
 #include "pl/ModMenuConfig.hpp"
 #include "pl/Input.hpp"
+#include "pl/runtime/JavaRuntime.h"
 
 namespace pl::runtime {
     namespace {
@@ -1397,6 +1398,14 @@ namespace pl::modmenu {
     void unregisterButton(std::string_view buttonId) {
         const std::string buttonIdString(buttonId);
         pl::runtime::UnregisterButton(buttonIdString.c_str());
+    }
+
+    void requestOpenMenu() {
+        pl::runtime::CallActivityVoidMethod("requestOpenModMenu");
+    }
+
+    void requestCloseMenu() {
+        pl::runtime::CallActivityVoidMethod("requestCloseModMenu");
     }
 
 } // namespace pl::modmenu

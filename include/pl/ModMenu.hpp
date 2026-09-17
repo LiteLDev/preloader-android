@@ -241,6 +241,9 @@ namespace pl::modmenu {
  */
     PL_EXPORT void unregisterButton(std::string_view buttonId);
 
+    PL_EXPORT void requestOpenMenu();
+    PL_EXPORT void requestCloseMenu();
+
 /**
  * @brief Fluent helper for building and registering ModuleInfo.
  */
