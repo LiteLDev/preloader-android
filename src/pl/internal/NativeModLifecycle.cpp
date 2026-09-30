@@ -268,6 +268,7 @@ bool unloadLoadedModEntry(const LoadedModEntry &entry) {
     entry.cppNativeMod->setState(pl::mod::NativeMod::State::Unloaded);
   }
   pl::runtime::UnregisterModulesForModId(entry.modId);
+  pl::runtime::ClearFloatingMenuButtonVisibilityForModId(entry.modId);
   return true;
 }
 

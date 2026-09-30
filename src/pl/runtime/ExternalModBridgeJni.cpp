@@ -65,6 +65,14 @@ Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetExternalMo
     return pl::runtime::GetRegisteredModuleCount();
 }
 
+JNIEXPORT jboolean JNICALL
+Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeIsFloatingModMenuButtonHidden(
+        JNIEnv *env, jclass clazz) {
+    (void)env;
+    (void)clazz;
+    return pl::runtime::IsFloatingMenuButtonHidden() ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT jstring JNICALL
 Java_org_levimc_launcher_core_mods_inbuilt_ExternalModBridge_nativeGetExternalModInfo(
         JNIEnv *env, jclass clazz, jint index) {

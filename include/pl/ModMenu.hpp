@@ -243,6 +243,7 @@ namespace pl::modmenu {
 
     PL_EXPORT void requestOpenMenu();
     PL_EXPORT void requestCloseMenu();
+    PL_EXPORT bool setFloatingMenuButtonVisible(bool visible);
 
 /**
  * @brief Fluent helper for building and registering ModuleInfo.

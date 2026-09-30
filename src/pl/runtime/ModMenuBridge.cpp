@@ -51,6 +51,7 @@ namespace pl::runtime {
 
         std::vector<RegisteredModule> g_registeredModules;
         std::vector<RegisteredButton> g_registeredButtons;
+        std::unordered_set<std::string> g_floatingMenuButtonHiddenOwners;
         std::mutex g_modMenuMutex;
         std::atomic<uint64_t> g_drawCommandsRevision{1};
         std::atomic<float> g_hudSurfaceWidth{0.0f};
@@ -1087,6 +1088,33 @@ namespace pl::runtime {
                 g_registeredButtons.end());
     }
 
+    bool SetFloatingMenuButtonVisibleForCurrentOwner(bool visible) {
+        const std::string ownerModId = CurrentOwnerModId();
+        if (ownerModId.empty())
+            return false;
+
+        std::lock_guard<std::mutex> lock(g_modMenuMutex);
+        if (visible) {
+            g_floatingMenuButtonHiddenOwners.erase(ownerModId);
+        } else {
+            g_floatingMenuButtonHiddenOwners.insert(ownerModId);
+        }
+        return true;
+    }
+
+    bool IsFloatingMenuButtonHidden() {
+        std::lock_guard<std::mutex> lock(g_modMenuMutex);
+        return !g_floatingMenuButtonHiddenOwners.empty();
+    }
+
+    void ClearFloatingMenuButtonVisibilityForModId(const std::string &modId) {
+        if (modId.empty())
+            return;
+
+        std::lock_guard<std::mutex> lock(g_modMenuMutex);
+        g_floatingMenuButtonHiddenOwners.erase(modId);
+    }
+
     int GetRegisteredButtonCount() {
         std::lock_guard<std::mutex> lock(g_modMenuMutex);
         return static_cast<int>(g_registeredButtons.size());
@@ -1406,6 +1434,10 @@ namespace pl::modmenu {
 
     void requestCloseMenu() {
         pl::runtime::CallActivityVoidMethod("requestCloseModMenu");
+    }
+
+    bool setFloatingMenuButtonVisible(bool visible) {
+        return pl::runtime::SetFloatingMenuButtonVisibleForCurrentOwner(visible);
     }
 
 } // namespace pl::modmenu

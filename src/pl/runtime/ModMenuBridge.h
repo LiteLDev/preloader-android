@@ -116,6 +116,9 @@ namespace pl::runtime {
     bool GetRegisteredModuleConfigSchema(std::string_view moduleId, std::string &out);
     std::uint64_t GetRegisteredModuleConfigSchemaRevision(std::string_view moduleId);
     void UnregisterModulesForModId(const std::string &modId);
+    bool SetFloatingMenuButtonVisibleForCurrentOwner(bool visible);
+    bool IsFloatingMenuButtonHidden();
+    void ClearFloatingMenuButtonVisibilityForModId(const std::string &modId);
 
     int GetRegisteredButtonCount();
     bool GetRegisteredButtonInfo(int index, RegisteredButton &out);
