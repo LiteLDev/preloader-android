@@ -1,7 +1,6 @@
 #include "pl/memory/Signature.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cctype>
 #include <cinttypes>
 #include <cstdio>
@@ -9,7 +8,6 @@
 #include <cstring>
 #include <dlfcn.h>
 #include <mutex>
-#include <queue>
 #include <span>
 #include <shared_mutex>
 #include <string>
@@ -49,14 +47,6 @@ struct ModuleInfo {
 struct CompiledPattern {
   std::string signature;
   ParsedPattern pattern;
-};
-
-struct AnchorNode {
-  std::array<int, 256> next{};
-  int failure = 0;
-  std::vector<size_t> outputs;
-
-  AnchorNode() { next.fill(-1); }
 };
 
 std::unordered_map<std::string, ModuleInfo> moduleCache;
@@ -311,146 +301,61 @@ compilePatterns(const std::vector<std::string> &signatures,
   return compiled;
 }
 
-std::vector<AnchorNode>
-buildAnchorAutomaton(const std::vector<CompiledPattern> &patterns,
-                     const std::vector<bool> &active,
-                     std::vector<size_t> &maskedPatterns) {
-  std::vector<AnchorNode> nodes(1);
-
-  for (size_t index = 0; index < patterns.size(); ++index) {
-    if (!active[index]) continue;
-    const auto &pattern = patterns[index].pattern;
-    bool exact = true;
-    for (size_t i = 0; i < pattern.anchorSize; ++i) {
-      if (!isExactByte(pattern.bytes[pattern.anchorIndex + i])) {
-        exact = false;
-        break;
-      }
-    }
-    if (!exact) {
-      maskedPatterns.push_back(index);
+uintptr_t scanPatternWindow(uintptr_t start, uintptr_t end,
+                             const ParsedPattern &pattern) {
+  if (end <= start || end - start < pattern.bytes.size()) return 0;
+  const auto *data = reinterpret_cast<const uint8_t *>(start);
+  const size_t size = end - start;
+  const size_t last = size - pattern.bytes.size() + pattern.anchorIndex;
+  size_t cursor = pattern.anchorIndex;
+  const auto anchor = pattern.bytes[pattern.anchorIndex];
+  while (cursor <= last) {
+    if (isExactByte(anchor)) {
+      const auto *found = static_cast<const uint8_t *>(
+          std::memchr(data + cursor, anchor.value, last - cursor + 1));
+      if (!found) return 0;
+      cursor = static_cast<size_t>(found - data);
+    } else if (!matches(anchor, data[cursor])) {
+      ++cursor;
       continue;
     }
-
-    int state = 0;
-    for (size_t i = 0; i < pattern.anchorSize; ++i) {
-      const uint8_t value = pattern.bytes[pattern.anchorIndex + i].value;
-      int next = nodes[state].next[value];
-      if (next == -1) {
-        next = static_cast<int>(nodes.size());
-        nodes[state].next[value] = next;
-        nodes.emplace_back();
-      }
-      state = next;
+    const size_t candidate = cursor - pattern.anchorIndex;
+    if (matchesAnchorAt(data, size, cursor, pattern) &&
+        matchesPatternAt(data + candidate, pattern)) {
+      return start + candidate;
     }
-    nodes[state].outputs.push_back(index);
+    ++cursor;
   }
-
-  std::queue<int> queue;
-  for (size_t value = 0; value < 256; ++value) {
-    int &next = nodes[0].next[value];
-    if (next == -1) {
-      next = 0;
-    } else {
-      nodes[next].failure = 0;
-      queue.push(next);
-    }
-  }
-
-  while (!queue.empty()) {
-    const int state = queue.front();
-    queue.pop();
-    for (size_t value = 0; value < 256; ++value) {
-      int &next = nodes[state].next[value];
-      if (next == -1) {
-        next = nodes[nodes[state].failure].next[value];
-        continue;
-      }
-
-      const int failure = nodes[nodes[state].failure].next[value];
-      nodes[next].failure = failure;
-      const auto &outputs = nodes[failure].outputs;
-      nodes[next].outputs.insert(nodes[next].outputs.end(), outputs.begin(),
-                                 outputs.end());
-      queue.push(next);
-    }
-  }
-
-  return nodes;
+  return 0;
 }
 
 void scanCompiledPatterns(const std::vector<MemoryRegion> &regions,
                           const std::vector<CompiledPattern> &patterns,
                           std::unordered_map<std::string, uintptr_t> &results) {
   if (patterns.empty()) return;
-
   std::vector<uintptr_t> found(patterns.size(), 0);
-  std::vector<bool> active(patterns.size(), true);
   size_t unresolved = patterns.size();
-
-  if (regions.empty()) {
-    unresolved = 0;
-  } else {
-    for (size_t i = 0; i < patterns.size(); ++i) {
-      if (patterns[i].pattern.checkIndices.empty()) {
-        found[i] = regions.front().start;
-        active[i] = false;
-        --unresolved;
-      }
+  size_t overlap = 0;
+  for (size_t i = 0; i < patterns.size(); ++i) {
+    overlap = std::max(overlap, patterns[i].pattern.bytes.size() - 1);
+    if (!regions.empty() && patterns[i].pattern.checkIndices.empty()) {
+      found[i] = regions.front().start;
+      --unresolved;
     }
   }
-
-  std::vector<size_t> maskedPatterns;
-  const auto nodes = buildAnchorAutomaton(patterns, active, maskedPatterns);
-
-  auto tryMatch = [&](const MemoryRegion &region, const uint8_t *data,
-                      size_t regionSize, size_t anchorOffset,
-                      size_t patternIndex) {
-    if (!active[patternIndex]) return;
-    const auto &pattern = patterns[patternIndex].pattern;
-    if (regionSize < pattern.bytes.size() ||
-        anchorOffset < pattern.anchorIndex ||
-        !matchesAnchorAt(data, regionSize, anchorOffset, pattern)) {
-      return;
-    }
-
-    const size_t candidateOffset = anchorOffset - pattern.anchorIndex;
-    if (candidateOffset > regionSize - pattern.bytes.size() ||
-        !matchesPatternAt(data + candidateOffset, pattern)) {
-      return;
-    }
-
-    found[patternIndex] = region.start + candidateOffset;
-    active[patternIndex] = false;
-    --unresolved;
-  };
-
   for (const auto &region : regions) {
-    if (unresolved == 0) break;
-    const auto *data = reinterpret_cast<const uint8_t *>(region.start);
-    const size_t regionSize = region.end - region.start;
-    int state = 0;
-
-    for (size_t offset = 0; offset < regionSize && unresolved != 0; ++offset) {
-      state = nodes[state].next[data[offset]];
-      for (const size_t patternIndex : nodes[state].outputs) {
-        const auto anchorSize = patterns[patternIndex].pattern.anchorSize;
-        if (offset + 1 >= anchorSize) {
-          tryMatch(region, data, regionSize, offset + 1 - anchorSize,
-                   patternIndex);
-        }
+    for (uintptr_t start = region.start; start < region.end && unresolved;) {
+      const uintptr_t next = start + std::min<uintptr_t>(64 * 1024, region.end - start);
+      const uintptr_t end = next + std::min<uintptr_t>(overlap, region.end - next);
+      for (size_t i = 0; i < patterns.size(); ++i) {
+        if (found[i]) continue;
+        found[i] = scanPatternWindow(start, end, patterns[i].pattern);
+        if (found[i]) --unresolved;
       }
-
-      for (const size_t patternIndex : maskedPatterns) {
-        if (!active[patternIndex]) continue;
-        const auto &pattern = patterns[patternIndex].pattern;
-        if (matches(pattern.bytes[pattern.anchorIndex], data[offset])) {
-          tryMatch(region, data, regionSize, offset, patternIndex);
-        }
-      }
+      start = next;
     }
+    if (!unresolved) break;
   }
-
   for (size_t i = 0; i < patterns.size(); ++i) {
     results[patterns[i].signature] = found[i];
   }

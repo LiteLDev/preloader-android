@@ -202,6 +202,14 @@ Java_org_levimc_launcher_preloader_PreloaderInput_nativeShouldForceGlobalModMenu
 }
 
 JNIEXPORT void JNICALL
+Java_org_levimc_launcher_preloader_PreloaderInput_nativePrepareRuntime(
+    JNIEnv *env, jclass clazz) {
+  (void)env;
+  (void)clazz;
+  pl::runtime::InitGameHooks();
+}
+
+JNIEXPORT void JNICALL
 Java_org_levimc_launcher_preloader_PreloaderInput_nativeConfigureSignatureRules(
     JNIEnv *env, jclass clazz, jstring rulesPath, jstring minecraftVersion) {
   (void)clazz;
